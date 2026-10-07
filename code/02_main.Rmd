@@ -1,0 +1,3916 @@
+---
+title: "02_main"
+output: html_document
+date: "2026-10-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import data and packages
+
+```{r import}
+
+# 1. Packages
+
+library(rnaturalearth)
+library(sf)
+library(raster)
+library(ggplotify)
+library(ggspatial)
+library(ggrepel)
+library(plyr)
+library(dagitty)
+library(ggdag)
+library(ggpubr)
+library(scales)
+library(simcausal)
+library(MixSIAR)
+library(tidybayes)
+library(brms)
+library(grid)
+library(gridExtra)
+library(magick)
+library(cowplot)
+library(tidyverse)
+library(piecewiseSEM)
+library(reshape2)
+library(jtools)
+library(modelr)
+library(lme4)
+
+# 2. Data
+
+# Site data
+
+site_data <- read.csv("data/CHA23_Site_info.csv")
+sb_data <- read.csv("data/Seabird_island_data.csv")
+island_data <- read.csv("data/CHA23_Source_sites.csv")
+
+plankton_site_data <- read.csv("data/Plankton_Site_data.csv")
+plank_site_data <- read.csv("data/Plank_Site_data.csv") #Southampton
+coral_site_data <- read.csv("data/Acropora_Site_data.csv")
+chaetrif_site_data <- read.csv("data/Butterflyfish_Site_data.csv")
+
+# SIA data
+
+turf_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Turf") %>% 
+  mutate(Site_ID = str_sub(ID, 1, 2),
+         Sample_ID = str_sub(ID, 3)) %>% 
+  left_join(island_data, by = c("Site_ID")) %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+det_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Detritus") %>% 
+  mutate(Site_ID = str_sub(ID, 1, 2),
+         Sample_ID = str_sub(ID, 3)) %>% 
+  left_join(island_data, by = c("Site_ID")) %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+zoop_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Zooplankton") %>% 
+  left_join(plankton_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+pom_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "POM") %>% 
+  left_join(plankton_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+chaetrif_det_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Chaetrif_detritus") %>% 
+  left_join(chaetrif_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+coral_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Coral") %>% 
+  left_join(coral_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+symbiont_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Symbiont") %>% 
+  left_join(coral_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+plank_day_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Plank_day") %>% 
+  left_join(plank_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+plank_night_SIA <- read.csv("data/CHA23_SIA_data.csv") %>% filter(Taxon == "Plank_night") %>% 
+  left_join(plank_site_data, by = c("ID" = "Sample_ID"))  %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  select(Taxon, N15, C13, Seabird_Biomass_density_prop, Atoll, Island, Year)
+
+plankton_SIA <- bind_rows(plank_day_SIA, zoop_SIA) %>% 
+  mutate(Taxon = "Plankton") 
+
+conv_factors <- read.csv("data/Conversion_factors.csv")
+
+invert_data <- read.csv("data/CHA23_Invert_data.csv") %>% 
+  left_join(site_data, by = c("Site" = "ID")) %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) %>% 
+  mutate(r = CSL/pi, Area = (2*pi*r^2)/10000) %>% 
+  filter(Condition == "ok") %>% 
+  left_join(conv_factors, by = "FAM") %>% 
+  mutate(AFDM = W*Mean)
+
+crypto_fish_data <- read.csv("data/CHA23_Fish_data.csv") %>% 
+  left_join(site_data, by = c("Site" = "ID")) %>% 
+  left_join(sb_data, by = c("Atoll", "Island")) %>% 
+  filter(FAM %in% c("Gobiidae", "Blenniidae", "Gobiesocidae", "Tripterygiidae", 
+                    "Syngnathidae", "Pseudochromidae","Plesiopidae", "Apogonidae", "Callionymidae")) %>% 
+  mutate(r = CSL/pi, Area = (2*pi*r^2)/10000) %>% 
+  mutate(TL = TL/10) %>% #mm to cm
+  filter(GENSPE != "Chlidichthys chagosensis") %>%
+  filter(Condition == "ok")   
+
+inv_crypto_fish_data <- read.csv("data/CHA23_Fish_data.csv") %>% 
+  left_join(site_data, by = c("Site" = "ID")) %>% 
+  left_join(sb_data, by = c("Atoll", "Island")) %>% 
+  filter(FAM %in% c("Pseudochromidae")) %>% 
+  mutate(r = CSL/pi, Area = (2*pi*r^2)/10000) %>% 
+  mutate(TL = TL/10) %>% #mm to cm
+  filter(GENSPE == "Chlidichthys chagosensis") %>%
+  filter(Condition == "ok")  
+
+mediators_nutrients <- bind_rows(plank_day_SIA, 
+                                 zoop_SIA,
+                                 turf_SIA, 
+                                 det_SIA, 
+                                 pom_SIA, 
+                                 chaetrif_det_SIA, 
+                                 coral_SIA, symbiont_SIA, 
+                                 plankton_SIA, plank_night_SIA)
+
+mediators_nutrients_wide <- mediators_nutrients %>% 
+  select(-C13, -Year) %>% 
+  group_by(across(c("Atoll", "Island")), Group = Taxon) %>%
+  summarise(d15N_mean = mean(N15, na.rm = TRUE),
+    .groups = "drop") %>%
+  pivot_wider(names_from  = Group,
+    values_from = c(d15N_mean),
+    names_prefix = "N15_",
+    names_sep   = "_")
+
+# quantify inter-lab variation
+
+set.seed(27)
+
+mediators_nutrients_lab <- mediators_nutrients %>%
+  mutate(
+    Lab = case_when(
+      Taxon %in% c("Turf", "Detritus") ~ "Texas",
+      Taxon %in% c("Plank_day", "Plank_night", "Chaetrif_detritus") ~ "Lancaster",
+      Taxon %in% c("Coral", "Symbiont") ~ "Southampton",
+      Taxon %in% c("POM", "Zooplankton") ~ "New Mexico",
+      TRUE ~ NA_character_)) %>% 
+  filter(!is.na(Lab)) 
+
+dat_test_var_n15 <- mediators_nutrients_lab %>%
+  filter(!is.na(N15), !is.na(Taxon), !is.na(Lab), !is.na(Island))
+
+m_var_nested <- brm(N15 ~ 1 + (1|Lab/Taxon) + (1|Island), data = dat_test_var_n15, iter = 4000, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+VarCorr(m_var_nested)
+performance::icc(m_var_nested)
+
+# UVC
+
+uvc_raw <- read.csv("data/CHA23_UVC_data.csv") 
+
+# egestion data
+
+load("data/cnpflux_output.Rdata")
+
+egestion_dat <- cnpflux %>% 
+  filter(Diet == "Planktivore" | Diet == "Herbivore" | Diet == "Corallivore") %>% 
+  group_by(Island, Atoll, Transect, Year) %>% 
+  mutate(Wc = sum(Wc_mean, na.rm = T)/Area,
+         Wp = sum(Wp_mean, na.rm = T)/Area,
+         Wn = sum(Wn_mean, na.rm = T)/Area,
+         Fn = sum(Fn_mean, na.rm = T)/Area,
+         Fp = sum(Fp_mean, na.rm = T)/Area) %>% 
+  left_join(sb_data, by = c("Atoll", "Island")) %>% 
+  distinct(Wc, Wn, Wp, Fp, Fn, Island, Atoll, Transect, Year, Seabird_Biomass_density_prop)
+
+egestion_dat_island <- egestion_dat %>% 
+  group_by(Island, Atoll) %>% 
+  summarize(Wc = mean(Wc))
+
+# Planktivores, herbivores and corallivores contribute to 2/3 of detritus production so likely appropriate proxies
+  
+egestion_dat_tot <- cnpflux %>% 
+  group_by(Island, Atoll, Transect, Year, Diet) %>% 
+  group_by(Diet) %>% 
+  mutate(Wc = sum(Wc_mean, na.rm = T)) %>% 
+  distinct(Wc, Diet)
+
+sum(egestion_dat_tot$Wc) #668.6848
+#439.679702/668.6848
+
+# coral growth data
+
+coral_growth_dat <- read.csv("data/Acropora_SIA_Growth.csv") %>% 
+  select(Atoll, Island, Host_N15, Symbiont_N15, diff_SA_year) %>% 
+  rename(Growth = diff_SA_year) %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island")) %>% # discrepancy in symbiont N15 values is because the one from mediators nutrients wide df is an average per island, and the one from the growth dataset is coral-specific 
+  left_join(sb_data, by = c("Atoll", "Island"))
+
+# Silhouettes
+
+img_herb <- image_read("figures/silhouettes/img_herb.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_plank <- image_read("figures/silhouettes/img_plank.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_cor <- image_read("figures/silhouettes/img_cor.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_det <- image_read("figures/silhouettes/img_det.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_omni <- image_read("figures/silhouettes/img_omni.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_carn <- image_read("figures/silhouettes/img_carn.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_inv <- image_read("figures/silhouettes/img_inv.png") %>% 
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_pisc <- image_read("figures/silhouettes/img_pisc.png") %>%
+  image_background("none") %>%
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_det_n15 <- image_read("figures/silhouettes/img_det_n15.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_turf_n15 <- image_read("figures/silhouettes/img_turf_n15.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_pom_n15 <- image_read("figures/silhouettes/img_pom_n15.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_symbiont_n15 <- image_read("figures/silhouettes/img_symbiont_n15.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_inv_prod <- image_read("figures/silhouettes/img_inv_prod.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_fish_prod <- image_read("figures/silhouettes/img_fish_prod.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_det_prod <- image_read("figures/silhouettes/img_det_prod.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+img_coral_prod <- image_read("figures/silhouettes/img_coral_prod.png") %>% 
+  image_flatten() %>% as.raster() %>% 
+  rasterGrob(interpolate = T)
+
+
+```
+
+
+# Map
+
+```{r plot-figs1}
+
+sb_gps <- read.csv("data/GPS.csv")
+
+sf::sf_use_s2(FALSE)
+
+# 1. IO map ----
+
+worldmap <- ne_countries(scale = 10, returnclass = 'sf')
+countries <- ne_download(category = "cultural", type = "countries", 
+                         returnclass = "sf", scale = 110) 
+ocean <- st_as_sfc(st_bbox(worldmap)) %>%
+  st_difference(st_union(countries))
+
+ioshp <- read_sf("data/map/ne_10m_land.shp", stringsAsFactors = TRUE)
+
+ocean_cropped_IO <- st_crop(ocean, xmin = 35, xmax = 80, ymin = -29, ymax = 9)
+
+CP_IO <- as(extent(35, 80, -29, 9), "SpatialPolygons")
+proj4string(CP_IO) <- CRS(proj4string(as_Spatial(ioshp)))
+out_IO <- st_intersection(st_as_sf(ioshp), st_as_sf(CP_IO), byid = TRUE)
+
+map_IO <- ggplot() + 
+  theme_bw() +
+  coord_map() + 
+  geom_sf(data = ocean_cropped_IO, fill = "white", col = "white") +
+  geom_sf(data = out_IO, fill = "lightgrey") +
+  geom_sf(data = out_IO, fill = "transparent") +
+  annotate(geom = "text", x = 65, y = -15, label = "Indian Ocean", 
+           fontface = "italic", color = "darkgrey", size = 2.7) +
+  geom_rect(data = out_IO, xmin = 71, xmax = 73, ymin = -6.5, ymax = -5.1, fill = NA, colour = "#474F58", 
+            linewidth = 0.5) +
+  annotation_scale(data = out_IO, location = "bl", width_hint = 0.05, height = unit(0.2, "cm"), text_cex = 0.5, text_pad = unit(0.15, "cm")) +
+  guides(x = guide_axis(position = "top")) +
+  theme(legend.margin = margin(), legend.title = element_text(hjust = 0, size = 9),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid = element_blank()) 
+
+map_IO
+
+# 2. Chagos map ----
+
+chashp <- read_sf("data/map/Chagos_v6.shp", stringsAsFactors = TRUE)
+
+ocean_cropped_C <- st_crop(ocean, xmin = 71, xmax = 73, ymin = -6.5, ymax = -5.1)
+
+CP_C <- as(extent(70, 74.2, -6.5, -5.1), "SpatialPolygons")
+proj4string(CP_C) <- CRS(proj4string(as_Spatial(chashp)))
+out_C <- st_intersection(st_as_sf(chashp), st_as_sf(CP_C), byid = TRUE)
+
+
+map_C <- ggplot() +
+  theme_bw() +
+  geom_point(data = sb_gps, aes(y = Lat, x = Lon, fill = log(Seabird_density)), 
+             size = 3, col = "black", shape = 21) +
+  coord_map() + 
+  geom_sf(data = ocean_cropped_C, fill = "white", col = "white") +
+  geom_sf(data = out_C, fill = "grey96") +
+  geom_sf(data = out_C, fill = "transparent") +
+  geom_rect(data = out_C, xmin = 72.182, xmax = 72.292, ymin = -5.372, ymax = -5.272, fill = NA, colour = "#474F58", 
+            linewidth = 0.5) +
+  geom_rect(data = out_C, xmin = 71.696, xmax = 72.006, ymin = -5.485, ymax = -5.175, fill = NA, colour = "#474F58", 
+            linewidth = 0.5) +
+  geom_rect(data = out_C, xmin = 71.306, xmax = 72.33, ymin = -6.250, ymax = -5.65, fill = NA, colour = "#474F58",
+            linewidth = 0.5) +
+  annotation_scale(data = out_C, location = "tl", width_hint = 0.05, height = unit(0.2, "cm"), text_cex = 0.5, 
+                   text_pad = unit(0.15, "cm")) +
+  scale_fill_gradient(high = "#1D9BF0", low = "#E63946", name = "Log-Seabird\nbiomass\n(kg ha⁻¹)") +
+  theme(legend.title = element_text(size = 8, lineheight = 1),
+        legend.text = element_text(size = 8),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid = element_blank(),
+        plot.margin = margin(0.5, 0, 0, 0, "cm")) +
+  scale_x_continuous(breaks=seq(71.2, 72.8, 0.5))
+
+# Salomon map
+
+ocean_cropped_S <- st_crop(ocean, xmin = 72.182, xmax = 72.292, ymin = -5.372, ymax = -5.262)
+
+CP_S <- as(extent(72.182, 72.292, -5.372, -5.262), "SpatialPolygons")
+proj4string(CP_S) <- CRS(proj4string(as_Spatial(chashp)))
+out_S <- st_intersection(st_as_sf(chashp), st_as_sf(CP_S), byid = TRUE)
+
+
+map_S <- ggplot() +
+  theme_bw() +
+  coord_map() + 
+  geom_sf(data = ocean_cropped_S, fill = "transparent", col = "white") +
+  geom_sf(data = out_S, fill = "grey96") +
+  geom_sf(data = out_S, fill = "transparent") +
+  scale_fill_gradient(high = "#1D9BF0", low = "#E63946") +
+  geom_point(data = sb_gps %>% filter(Atoll == "Salomon"), aes(y = Lat, x = Lon, fill = log(Seabird_density)), 
+             size = 3, col = "black", shape = 21) +
+  annotation_scale(data = out_S, location = "tl", width_hint = 0.12, height = unit(0.2, "cm"), 
+                   text_cex = 0.5, text_pad = unit(0.15, "cm")) +
+  annotate(geom = "text", x = 72.257, y = -5.294, label = "Ile de la Passe", 
+           fontface = "italic", color = "#474F58", size = 2.7) +
+  annotate(geom = "text", x = 72.204, y = -5.325, label = "Ile Anglaise", 
+           fontface = "italic", color = "#474F58", size = 2.7) +
+  annotate(geom = "text", x = 72.27, y = -5.36, label = "Ile Fouquet", 
+           fontface = "italic", color = "#474F58", size = 2.7) +
+  theme(legend.margin = margin(), legend.title = element_text(hjust = 0, size = 9),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid = element_blank(),
+        plot.margin = margin(0, 0, 0, 0, "cm"))
+
+# Peros Banhos map
+
+ocean_cropped_PB <- st_crop(ocean, xmin = 71.696, xmax = 72.006, ymin = -5.485, ymax = -5.175)
+
+CP_PB <- as(extent(71.696, 72.006, -5.485, -5.175), "SpatialPolygons")
+proj4string(CP_PB) <- CRS(proj4string(as_Spatial(chashp)))
+out_PB <- st_intersection(st_as_sf(chashp), st_as_sf(CP_PB), byid = TRUE)
+
+
+map_PB <- ggplot() +
+  theme_bw() +
+  coord_map() + 
+  geom_sf(data = ocean_cropped_PB, fill = "transparent", col = "white") +
+  geom_sf(data = out_PB, fill = "grey96") +
+  geom_sf(data = out_PB, fill = "transparent") +
+  scale_fill_gradient(high = "#1D9BF0", low = "#E63946") +
+  geom_point(data = sb_gps %>% filter(Atoll == "Peros Banhos"), aes(y = Lat, x = Lon, fill = log(Seabird_density)), 
+             size = 3, col = "black", shape = 21) +
+  annotation_scale(data = out_PB, location = "tl", width_hint = 0.05, height = unit(0.2, "cm"), 
+                   text_cex = 0.5, text_pad = unit(0.15, "cm")) +
+  annotate(geom = "text", x = 71.968, y = -5.223, label = "Ile Yeye", 
+           fontface = "italic", color = "#474F58", size = 2.7) +
+  annotate(geom = "text", x = 71.73, y = -5.47, label = "Ile Anglaise", 
+           fontface = "italic", color = "#474F58", size = 2.7) +
+  annotate(geom = "text", x = 71.98, y = -5.425, label = "Grande \nIle \nCoquillage", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  annotate(geom = "text", x = 71.875, y = -5.24, label = "Ile \nLongue", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  annotate(geom = "text", x = 71.717, y = -5.41, label = "Ile \nPoule", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  annotate(geom = "text", x = 71.717, y = -5.26, label = "Grande \nMapou", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  theme(legend.margin = margin(), legend.title = element_text(hjust = 0, size = 9),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid = element_blank(),
+        plot.margin = margin(0, 0, 0, 0, "cm"))
+
+# Great Chagos Bank map
+
+ocean_cropped_GCB <- st_crop(ocean, xmin = 71.15, xmax = 72.33, ymin = -6.25, ymax = -5.4)
+
+CP_GCB <- as(extent(71.15, 72.33, -6.25, -5.65), "SpatialPolygons")
+proj4string(CP_GCB) <- CRS(proj4string(as_Spatial(chashp)))
+out_GCB <- st_intersection(st_as_sf(chashp), st_as_sf(CP_GCB), byid = TRUE)
+
+
+map_GCB <- ggplot() +
+  theme_bw() +
+  coord_map() + 
+  geom_sf(data = ocean_cropped_GCB, fill = "transparent", col = "white") +
+  geom_sf(data = out_GCB, fill = "grey96") +
+  geom_sf(data = out_GCB, fill = "transparent") +
+  geom_point(data = sb_gps %>% filter(Atoll == "Great Chagos Bank"), aes(y = Lat, x = Lon, fill = log(Seabird_density)), 
+             size = 3, col = "black", shape = 21) +
+  scale_fill_gradient(high = "#1D9BF0", low = "#E63946") +
+  annotation_scale(data = out_GCB, location = "tl", width_hint = 0.1, height = unit(0.2, "cm"), 
+                   text_cex = 0.5, text_pad = unit(0.15, "cm")) +
+  annotate(geom = "text", x = 71.4, y = -6, label = "Middle \nBrother", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  annotate(geom = "text", x = 71.4, y = -6.1, label = "South \nBrother", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  annotate(geom = "text", x = 71.21, y = -6.154, label = "Eagle \nIsland", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+    annotate(geom = "text", x = 72.25, y = -5.6, label = "Nelson \nIsland", 
+           fontface = "italic", color = "#474F58", size = 2.7, lineheight = 0.8) +
+  theme(legend.margin = margin(), legend.title = element_text(hjust = 0, size = 9),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid = element_blank(),
+        plot.margin = margin(0, 0, 0, 0, "cm"))
+
+
+map_GCB
+
+map.plot <- ggarrange(
+  ggarrange(map_IO, map_C + rremove("xy.text") + rremove("ticks"), nrow = 1),
+  ggarrange(
+  map_GCB + rremove("xy.text") + rremove("ticks") + rremove("legend"),
+  map_PB + rremove("xy.text") + rremove("ticks") + rremove("legend"), 
+  map_S + rremove("xy.text") + rremove("ticks") + rremove("legend"), 
+  labels = c("Great Chagos \n           Bank", "Peros Banhos", "Salomon"), 
+  hjust = c(-0.9, -0.9, -1.7), vjust = c(1.5, 2.2, 2.2), font.label = list(size = 10, color = "#474F58"),
+  align = "h", nrow = 1),
+ nrow = 2, heights = c(1.1, 1)) 
+
+map.plot
+
+map_grob <- as.grob(map.plot)
+
+composite_with_arrows <- gTree(children = gList(
+  map_grob,
+  linesGrob(x = unit(c(0.58, 0.3), "npc"),
+    y = unit(c(0.625, 0.475), "npc"),
+    gp = gpar(col = "#474F58", lwd = 1.2)),
+  linesGrob(x = unit(c(0.65, 0.62), "npc"),
+    y = unit(c(0.795, 0.475), "npc"),
+    gp = gpar(col = "#474F58", lwd = 1.2)),
+  linesGrob(x = unit(c(0.73, 0.9), "npc"),
+    y = unit(c(0.82, 0.475), "npc"),
+    gp = gpar(col = "#474F58", lwd = 1.2)),
+  linesGrob(x = unit(c(0.395, 0.505), "npc"),
+    y = unit(c(0.766, 0.71), "npc"),
+    gp = gpar(col = "#474F58", lwd = 1.2))
+))
+
+arrow_plot <- ggplot() + 
+  theme_void() +
+  annotation_custom(composite_with_arrows)
+
+arrow_plot
+
+#ggsave("figures/supp/FigS1.jpg", arrow_plot, width = 7, height = 5, units = "in", dpi = 600)
+#ggsave("figures/supp/FigS1.pdf", arrow_plot, width = 6, height = 4, units = "in", dpi = 600)
+```
+
+# Calculate productivity of cryptobenthic fish and invertebrates
+
+```{r prod-inv}
+
+prod_inv_data <- invert_data %>% 
+  filter(!is.na(AFDM)) %>% 
+  mutate(Prod_indiv = 365*(10^(-2.31+0.8*log10(AFDM*10^6) + 0.89*log10(28)))/10^6,
+         Prod = Prod_indiv/Area*10, #Edgar 1990 for marine/estuarine taxa; see formula in Fraser et al 2020. P is productivity of of individual in g AFDW d-1, now in kg.ha-1
+         Biomass = W/Area*10)
+
+prod_inv_data_site <- prod_inv_data %>%
+  group_by(Site, Island, Atoll, Seabird_Biomass_density_prop) %>% 
+  summarize(Prod = sum(Prod, na.rm = T),
+            Biomass = sum(W, na.rm = T),
+            Area = first(Area)) %>% 
+  distinct(Prod, Biomass, Site, Island, Atoll)
+
+prod_inv_data_island <- prod_inv_data_site %>%
+  group_by(Island, Atoll) %>%
+  summarise(
+    Prod = mean(Prod, na.rm = T),
+    Biomass = mean(Biomass, na.rm = T))
+
+```
+
+```{r prod-crypto-fish}
+
+crypto_site_list <- crypto_fish_data %>% distinct(Site, Atoll, Island)
+
+traits <- read.csv('data/fishtraits_productivity.csv') #from Brandl et al 2024 Ecology
+kmax_list <- read.csv('data/All_Kmax_final.csv') %>% 
+  mutate(Species = str_replace_all(Species, "_", " "))
+
+sp_uvc_kmax <- merge(traits, kmax_list, by = c("MaxSizeTL","Diet", "Species"), all.x=TRUE)
+sp_uvc_kmax_2 <- unique(sp_uvc_kmax) %>% select(-LW_a, -LW_b) 
+
+bayes_ab <- read.csv("data/bayes_ab_crypto.csv") %>% rename(Species = species, LW_a = lwa_m, LW_b = lwb_m) %>% select(-lwa_sd, -lwb_sd)
+
+crypto_fish.biomass.data_site <- crypto_fish_data %>% 
+  filter(!is.na(TL)) %>% 
+  filter(GENSPE != "Chlidichthys chagosensis") %>% 
+  mutate(W_m = W/Area) %>% 
+  group_by(Atoll, Island, Site, Depth, Seabird_Biomass_density_prop) %>% 
+  mutate(Biomass = sum(as.numeric(W_m), na.rm = T)) %>% 
+  distinct(Atoll, Island, Site, Biomass, Area, Depth, Seabird_Biomass_density_prop) 
+
+crypto_fish.biomass.data_island <- crypto_fish.biomass.data_site %>%
+  group_by(Atoll, Island, Seabird_Biomass_density_prop) %>%
+  summarise(
+    Biomass = mean(Biomass, na.rm = T),
+    Depth = mean(Depth, na.rm = T),
+    n_sites = n())
+
+crypto_fish_dat_bio_wide_site <- crypto_fish_data %>% 
+  rename(Species = GENSPE) %>% 
+  filter(!is.na(TL)) %>% 
+  filter(Species != "Chlidichthys chagosensis") %>% 
+  group_by(Atoll, Island, Species, Site) %>% 
+  summarize(Sum_Bio = sum(W/Area, na.rm = T)) %>% 
+  pivot_wider(names_from = Species, values_from = Sum_Bio, values_fill = 0)
+
+crypto_fish_dat_bio_wide_island <- crypto_fish_dat_bio_wide_site %>%
+  group_by(Atoll, Island) %>%
+  summarize(across(where(is.numeric), mean, na.rm = T))
+
+#sum  biomass
+crypto_fish_sum_bio_site <- rowSums(crypto_fish_dat_bio_wide_site[,4:ncol(crypto_fish_dat_bio_wide_site)])
+crypto_fish_chagos_div_site <- cbind(crypto_fish_dat_bio_wide_site[1:3], Biomass = crypto_fish_sum_bio_site)
+
+crypto_fish_sum_bio_island <- rowSums(crypto_fish_dat_bio_wide_island[,3:ncol(crypto_fish_dat_bio_wide_island)])
+crypto_fish_chagos_div_island <- cbind(crypto_fish_dat_bio_wide_island[1:2], Biomass = crypto_fish_sum_bio_island)
+
+#combine UVC data with kmax data
+
+##add column for k values in fish data
+crypto_fish_dat_k <- merge(crypto_fish_data %>% filter(!is.na(TL)) %>% filter(GENSPE != "Chlidichthys chagosensis") %>% 
+                             rename(Species = GENSPE),sp_uvc_kmax_2, by=c("Species"), all.x=TRUE ) %>% filter(!is.na(Kmax))
+crypto_fish_dat_k <- merge(crypto_fish_dat_k, bayes_ab, by = c("Species"))
+
+crypto_fish_dat_k[crypto_fish_dat_k$TL>crypto_fish_dat_k$MaxSizeTL,] 
+
+crypto_fish_dat_k$TL <- ifelse(
+  crypto_fish_dat_k$TL > crypto_fish_dat_k$MaxSizeTL,
+  crypto_fish_dat_k$MaxSizeTL,
+  crypto_fish_dat_k$TL
+)
+
+crypto_fish_dat_prod <- crypto_fish_dat_k
+
+#calculate prod
+#Derived from Morais & Bellwood 2019
+
+#check which species estimated length > max length 
+crypto_fish_dat_k[crypto_fish_dat_k$TL>crypto_fish_dat_k$MaxSizeTL,] 
+
+#calculate age
+crypto_fish_dat_prod$EstAge<-(1/crypto_fish_dat_prod$Kmax)*log((crypto_fish_dat_prod$MaxSizeTL)/((1-crypto_fish_dat_prod$TL/crypto_fish_dat_prod$MaxSizeTL)*crypto_fish_dat_prod$MaxSizeTL))
+
+#plug back age into VGBF to calculate growth
+age <- (1:365) / 365
+
+#set up table for new lengths: 1 column per day, 1 row per individual fish
+crypto_fish_vb_len_tab <- matrix (ncol = length (age), nrow = nrow (crypto_fish_dat_prod), dimnames = list (NULL, paste ('Day', 1:365, sep="_")))
+
+#for each individual, calculate new length for that day using VBGF formula (written above)
+for (u in 1:nrow (crypto_fish_dat_prod)) {
+  
+  crypto_fish_vb_len_tab [u, ] <- crypto_fish_dat_prod$MaxSizeTL[u]*(1-exp(-crypto_fish_dat_prod$Kmax[u]*(crypto_fish_dat_prod$EstAge[u]+age))) 
+  
+}
+##convert length to weight using a,b coefs
+crypto_fish_vb_wt_tab <- apply (crypto_fish_vb_len_tab, 2, function (x) crypto_fish_dat_prod$LW_a * (x ^ crypto_fish_dat_prod$LW_b))
+
+#create production table (in grams, weight) per day
+crypto_fish_biomass_not_rounded_g <- (crypto_fish_dat_prod$LW_a*crypto_fish_dat_prod$TL^crypto_fish_dat_prod$LW_b)
+crypto_fish_vb_wt_tab <- cbind(crypto_fish_biomass_not_rounded_g, crypto_fish_vb_wt_tab)
+colnames(crypto_fish_vb_wt_tab)[1] <- "Day_0"
+crypto_fish_vb_prod_wt_tab <- crypto_fish_vb_wt_tab
+
+for (u in 2:ncol(crypto_fish_vb_prod_wt_tab))
+  for (v in 1:nrow(crypto_fish_vb_prod_wt_tab)) {
+    crypto_fish_vb_prod_wt_tab [v,u ] <- crypto_fish_vb_wt_tab[v,u]-crypto_fish_vb_wt_tab[v,(u-1)]
+  }
+
+crypto_fish_vb_prod_wt_tab2<-crypto_fish_vb_prod_wt_tab[,2:ncol(crypto_fish_vb_prod_wt_tab)]
+
+#incorporate size-dependant mortality for net productivity
+
+crypto_fish_dat_prod$logZyear<- (-0.0066-(0.279*log(crypto_fish_dat_prod$MaxSizeTL))+(0.6543*log(crypto_fish_dat_prod$Kmax))+(0.4634*log(28)))
+crypto_fish_dat_prod$Zyear<-exp(crypto_fish_dat_prod$logZyear)
+
+crypto_fish_dat_prod$Zday<-crypto_fish_dat_prod$Zyear/365
+
+#calculate probability of survival
+#probability of survival = exp(-zday)
+crypto_fish_dat_prod$SurvivalDay<-exp(-crypto_fish_dat_prod$Zday)
+
+#vector of daily survival probabilities for the year
+crypto_fish_psurv_tab <- matrix (ncol = 365, nrow = nrow (crypto_fish_dat_prod), dimnames = list (NULL, paste ('Day', 1:365)))
+for (u in 1:nrow (crypto_fish_dat_prod)) {
+  crypto_fish_psurv_tab [u, ] <- exp(-crypto_fish_dat_prod$Zday[u]) 
+}
+
+#simulate mortality per day
+
+crypto_fish_surv_outcome_day <- matrix (ncol = 365, nrow = nrow (crypto_fish_psurv_tab))
+
+for (u in 1:nrow(crypto_fish_psurv_tab))
+  for (v in 1:ncol(crypto_fish_psurv_tab)) {
+    crypto_fish_surv_outcome_day [u,v ] <- rbern(1,prob= crypto_fish_psurv_tab[u,v])
+  }
+
+nrow(subset(crypto_fish_surv_outcome_day,rowSums(crypto_fish_surv_outcome_day)!=365))
+nrow(subset(crypto_fish_surv_outcome_day,rowSums(crypto_fish_surv_outcome_day)==365)) 
+
+##need to make it so once there is a zero in the row, every value after that is zero
+zero_row_replace <- function(x){
+  x[which(cumany(x==0))] <- 0
+  return(x)
+}
+
+crypto_fish_surv_outcome_day2<-adply(crypto_fish_surv_outcome_day, 1, zero_row_replace)
+crypto_fish_surv_outcome_day2<-dplyr::select(crypto_fish_surv_outcome_day2, -c(X1)) #remove first row, don't want that
+
+nrow(subset(crypto_fish_surv_outcome_day2,rowSums(crypto_fish_surv_outcome_day2)!=365))
+nrow(subset(crypto_fish_surv_outcome_day2,rowSums(crypto_fish_surv_outcome_day2)==365))
+
+#multiply survival table*production table to get production estimates
+crypto_fish_est_daily_prod_tab <- crypto_fish_surv_outcome_day2*crypto_fish_vb_prod_wt_tab2
+
+#um daily production over the course of a year
+crypto_fish_prod_year <- rowSums(crypto_fish_est_daily_prod_tab)
+
+#final conversions and save above simulation
+crypto_fish_dat_prod_final <- crypto_fish_dat_prod
+crypto_fish_dat_prod_final$prod_year_g <- crypto_fish_prod_year
+
+#convert to kg/ha
+crypto_fish_dat_prod_final$prod_year_kg_h <- crypto_fish_dat_prod_final$prod_year_g/crypto_fish_dat_prod_final$Area*10
+
+#for station-level prod analyses
+crypto_fish.site.prod.data <- ddply(crypto_fish_dat_prod_final, c("Atoll", "Island", "Site"), summarise,
+                  Prod = sum(prod_year_kg_h))
+
+#combine with other data
+crypto_fish_chagos_site_prod <- merge(crypto_fish_chagos_div_site, crypto_fish.site.prod.data, by = c("Atoll", "Island", "Site"), all.x=TRUE)
+
+crypto_fish.site.prod.data <- crypto_fish.biomass.data_site %>% 
+  select(-Biomass) %>% 
+  left_join(crypto_fish_chagos_site_prod, by = c("Atoll", "Island", "Site"))
+
+#for island-level prod analyses
+crypto_fish.island.prod.data <- crypto_fish.site.prod.data %>%
+  group_by(Atoll, Island) %>%
+  summarise(Prod = mean(Prod, na.rm = T))
+
+#combine with other data
+crypto_fish_chagos_island_prod <- merge(crypto_fish_chagos_div_island, crypto_fish.island.prod.data, by = c("Atoll", "Island"), all.x = T)
+
+crypto_fish.island.prod.data <- crypto_fish.biomass.data_island %>% 
+  select(-Biomass) %>% 
+  left_join(crypto_fish_chagos_island_prod, by = c("Atoll", "Island")) 
+
+```
+
+```{r prod-inv-crypto-fish}
+
+inv_crypto_fish.biomass.data_site <- inv_crypto_fish_data %>% 
+  filter(!is.na(TL)) %>% 
+  mutate(W_m = W/Area) %>% 
+  group_by(Atoll, Island, Site, Abundance, Density, Depth, Seabird_Biomass_density_prop) %>% 
+  mutate(Biomass = sum(as.numeric(W_m), na.rm = T)) %>% 
+  distinct(Atoll, Island, Site, Biomass, Area, Depth, Seabird_Biomass_density_prop) 
+
+inv_crypto_fish.biomass.data_island <- inv_crypto_fish.biomass.data_site %>%
+  group_by(Atoll, Island, Seabird_Biomass_density_prop) %>%
+  summarise(Biomass = mean(Biomass, na.rm = T),
+    Depth = mean(Depth, na.rm = T),
+    n_sites = n())
+
+inv_crypto_fish_dat_bio_wide_site <- inv_crypto_fish_data %>% 
+  rename(Species = GENSPE) %>% 
+  filter(!is.na(TL)) %>% 
+  group_by(Atoll, Island, Species, Site) %>% 
+  summarize(Sum_Bio = sum(W/Area, na.rm = T)) %>% 
+  pivot_wider(names_from = Species, values_from = Sum_Bio, values_fill = 0)
+
+inv_crypto_fish_dat_bio_wide_island <- inv_crypto_fish_dat_bio_wide_site %>%
+  group_by(Atoll, Island) %>%
+  summarize(across(where(is.numeric), mean, na.rm = T))
+
+#sum  biomass
+inv_crypto_fish_sum_bio_site <- rowSums(inv_crypto_fish_dat_bio_wide_site[,4:ncol(inv_crypto_fish_dat_bio_wide_site)])
+inv_crypto_fish_chagos_div_site <- cbind(inv_crypto_fish_dat_bio_wide_site[1:3], Biomass = inv_crypto_fish_sum_bio_site)
+
+inv_crypto_fish_sum_bio_island <- rowSums(inv_crypto_fish_dat_bio_wide_island[,3:ncol(inv_crypto_fish_dat_bio_wide_island)])
+inv_crypto_fish_chagos_div_island <- cbind(inv_crypto_fish_dat_bio_wide_island[1:2], Biomass = inv_crypto_fish_sum_bio_island)
+
+#combine UVC data with kmax data
+
+##add column for k values in fish data
+inv_crypto_fish_dat_k <- merge(inv_crypto_fish_data %>% filter(!is.na(TL)) %>% 
+                             rename(Species = GENSPE),sp_uvc_kmax_2, by=c("Species"), all.x=TRUE ) %>% filter(!is.na(Kmax))
+inv_crypto_fish_dat_k <- merge(inv_crypto_fish_dat_k, bayes_ab, by = c("Species"))
+
+inv_crypto_fish_dat_k[inv_crypto_fish_dat_k$TL>inv_crypto_fish_dat_k$MaxSizeTL,] 
+
+inv_crypto_fish_dat_k$TL <- ifelse(
+  inv_crypto_fish_dat_k$TL > inv_crypto_fish_dat_k$MaxSizeTL,
+  inv_crypto_fish_dat_k$MaxSizeTL,
+  inv_crypto_fish_dat_k$TL)
+
+inv_crypto_fish_dat_prod <- inv_crypto_fish_dat_k
+
+#calculate prod
+#Derived from Morais & Bellwood 2019
+
+#check which species estimated length > max length 
+inv_crypto_fish_dat_k[inv_crypto_fish_dat_k$TL>inv_crypto_fish_dat_k$MaxSizeTL,] 
+
+#calculate age
+inv_crypto_fish_dat_prod$EstAge<-(1/inv_crypto_fish_dat_prod$Kmax)*log((inv_crypto_fish_dat_prod$MaxSizeTL)/((1-inv_crypto_fish_dat_prod$TL/inv_crypto_fish_dat_prod$MaxSizeTL)*inv_crypto_fish_dat_prod$MaxSizeTL))
+
+#plug back age into VGBF to calculate growth
+age <- (1:365) / 365
+
+#set up table for new lengths: 1 column per day, 1 row per individual fish
+inv_crypto_fish_vb_len_tab <- matrix (ncol = length (age), nrow = nrow (inv_crypto_fish_dat_prod), dimnames = list (NULL, paste ('Day', 1:365, sep="_")))
+
+#for each individual, calculate new length for that day using VBGF formula (written above)
+for (u in 1:nrow (inv_crypto_fish_dat_prod)) {
+  
+  inv_crypto_fish_vb_len_tab [u, ] <- inv_crypto_fish_dat_prod$MaxSizeTL[u]*(1-exp(-inv_crypto_fish_dat_prod$Kmax[u]*(inv_crypto_fish_dat_prod$EstAge[u]+age))) 
+  
+}
+##convert length to weight using a,b coefs
+inv_crypto_fish_vb_wt_tab <- apply (inv_crypto_fish_vb_len_tab, 2, function (x) inv_crypto_fish_dat_prod$LW_a * (x ^ inv_crypto_fish_dat_prod$LW_b))
+
+#create production table (in grams, weight) per day
+inv_crypto_fish_biomass_not_rounded_g <- (inv_crypto_fish_dat_prod$LW_a*inv_crypto_fish_dat_prod$TL^inv_crypto_fish_dat_prod$LW_b)
+inv_crypto_fish_vb_wt_tab <- cbind(inv_crypto_fish_biomass_not_rounded_g, inv_crypto_fish_vb_wt_tab)
+colnames(inv_crypto_fish_vb_wt_tab)[1] <- "Day_0"
+inv_crypto_fish_vb_prod_wt_tab <- inv_crypto_fish_vb_wt_tab
+
+for (u in 2:ncol(inv_crypto_fish_vb_prod_wt_tab))
+  for (v in 1:nrow(inv_crypto_fish_vb_prod_wt_tab)) {
+    inv_crypto_fish_vb_prod_wt_tab [v,u ] <- inv_crypto_fish_vb_wt_tab[v,u]-inv_crypto_fish_vb_wt_tab[v,(u-1)]
+  }
+
+inv_crypto_fish_vb_prod_wt_tab2<-inv_crypto_fish_vb_prod_wt_tab[,2:ncol(inv_crypto_fish_vb_prod_wt_tab)]
+
+#incorporate size-dependant mortality for net productivity
+
+inv_crypto_fish_dat_prod$logZyear<- (-0.0066-(0.279*log(inv_crypto_fish_dat_prod$MaxSizeTL))+(0.6543*log(inv_crypto_fish_dat_prod$Kmax))+(0.4634*log(28)))
+inv_crypto_fish_dat_prod$Zyear<-exp(inv_crypto_fish_dat_prod$logZyear)
+
+inv_crypto_fish_dat_prod$Zday<-inv_crypto_fish_dat_prod$Zyear/365
+
+#calculate probability of survival
+#probability of survival = exp(-zday)
+inv_crypto_fish_dat_prod$SurvivalDay<-exp(-inv_crypto_fish_dat_prod$Zday)
+
+#vector of daily survival probabilities for the year
+inv_crypto_fish_psurv_tab <- matrix (ncol = 365, nrow = nrow (inv_crypto_fish_dat_prod), dimnames = list (NULL, paste ('Day', 1:365)))
+for (u in 1:nrow (inv_crypto_fish_dat_prod)) {
+  inv_crypto_fish_psurv_tab [u, ] <- exp(-inv_crypto_fish_dat_prod$Zday[u]) 
+}
+
+#simulate mortality per day
+
+inv_crypto_fish_surv_outcome_day <- matrix (ncol = 365, nrow = nrow (inv_crypto_fish_psurv_tab))
+
+for (u in 1:nrow(inv_crypto_fish_psurv_tab))
+  for (v in 1:ncol(inv_crypto_fish_psurv_tab)) {
+    inv_crypto_fish_surv_outcome_day [u,v ] <- rbern(1,prob= inv_crypto_fish_psurv_tab[u,v])
+  }
+
+nrow(subset(inv_crypto_fish_surv_outcome_day,rowSums(inv_crypto_fish_surv_outcome_day)!=365))
+nrow(subset(inv_crypto_fish_surv_outcome_day,rowSums(inv_crypto_fish_surv_outcome_day)==365)) 
+
+inv_crypto_fish_surv_outcome_day2<-adply(inv_crypto_fish_surv_outcome_day, 1, zero_row_replace)
+inv_crypto_fish_surv_outcome_day2<-dplyr::select(inv_crypto_fish_surv_outcome_day2, -c(X1)) #remove first row, don't want that
+
+nrow(subset(inv_crypto_fish_surv_outcome_day2,rowSums(inv_crypto_fish_surv_outcome_day2)!=365))
+nrow(subset(inv_crypto_fish_surv_outcome_day2,rowSums(inv_crypto_fish_surv_outcome_day2)==365))
+
+#multiply survival table*production table to get production estimates
+inv_crypto_fish_est_daily_prod_tab <- inv_crypto_fish_surv_outcome_day2*inv_crypto_fish_vb_prod_wt_tab2
+
+#um daily production over the course of a year
+inv_crypto_fish_prod_year <- rowSums(inv_crypto_fish_est_daily_prod_tab)
+
+#final conversions and save above simulation
+inv_crypto_fish_dat_prod_final <- inv_crypto_fish_dat_prod
+inv_crypto_fish_dat_prod_final$prod_year_g <- inv_crypto_fish_prod_year
+
+#convert to kg/ha
+inv_crypto_fish_dat_prod_final$prod_year_kg_h <- inv_crypto_fish_dat_prod_final$prod_year_g/inv_crypto_fish_dat_prod_final$Area*10
+
+#for station-level prod analyses
+inv_crypto_fish.site.prod.data <- ddply(inv_crypto_fish_dat_prod_final, c("Atoll", "Island", "Site"), summarise,
+                  Prod = sum(prod_year_kg_h)) %>% 
+  right_join(crypto_site_list) %>% 
+  mutate(Prod = ifelse(Prod == 0 | is.na(Prod), 0.001, Prod))
+
+#combine with other data
+inv_crypto_fish_chagos_site_prod <- merge(inv_crypto_fish_chagos_div_site, inv_crypto_fish.site.prod.data, by = c("Atoll", "Island", "Site"), all.x = T)
+
+inv_crypto_fish.site.prod.data <- inv_crypto_fish.biomass.data_site %>% 
+  left_join(inv_crypto_fish_chagos_site_prod, by = c("Atoll", "Island", "Site", "Biomass"))  %>% 
+  right_join(crypto_site_list) %>% 
+  mutate(Prod = ifelse(Prod == 0 | is.na(Prod), 0.001, Prod))
+
+#for island-level prod analyses
+inv_crypto_fish.island.prod.data <- inv_crypto_fish.site.prod.data %>%
+  group_by(Atoll, Island) %>%
+  summarise(Prod = mean(Prod, na.rm = T))
+
+#combine with other data
+inv_crypto_fish_chagos_island_prod <- merge(inv_crypto_fish_chagos_div_island, inv_crypto_fish.island.prod.data, by = c("Atoll", "Island"), all.x = T)
+
+inv_crypto_fish.island.prod.data <- inv_crypto_fish.biomass.data_island %>% 
+  select(-Biomass) %>% 
+  left_join(inv_crypto_fish_chagos_island_prod, by = c("Atoll", "Island")) 
+
+```
+
+```{r data-mediators-prod-crypto-island}
+
+crypto_fish.island.prod.df <- crypto_fish.island.prod.data %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Crypto_fish", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass)
+
+inv_crypto_fish.island.prod.df <- inv_crypto_fish.island.prod.data %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Inv_crypto_fish", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass)
+
+crypto_inv.island.prod.df <- prod_inv_data_island %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Crypto_inv", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass)
+
+mediators_productivity_island <- rbind(crypto_fish.island.prod.df, inv_crypto_fish.island.prod.df, crypto_inv.island.prod.df)
+
+mediators_productivity_island_wide <- mediators_productivity_island %>% 
+  select(-Year) %>% 
+  group_by(Atoll, Island, Taxon) %>%
+  pivot_wider(names_from  = Taxon,
+    values_from = c(Prod, Biomass),
+    names_sep   = "_")
+
+```
+
+```{r data-mediators-prod-crypto-site}
+
+crypto_fish.prod.df <- crypto_fish.site.prod.data %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Crypto_fish", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass, Site)
+
+inv_crypto_fish.prod.df <- inv_crypto_fish.site.prod.data %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Inv_crypto_fish", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass, Site)
+
+crypto_inv.prod.df <- prod_inv_data_site %>% 
+  ungroup() %>% 
+  mutate(Taxon = "Crypto_inv", Year = 2023) %>% 
+  select(Taxon, Atoll, Island, Prod, Year, Biomass, Site)
+
+mediators_productivity_site <- rbind(crypto_fish.prod.df, inv_crypto_fish.prod.df, crypto_inv.prod.df)
+
+mediators_productivity_site_wide <- mediators_productivity_site %>% 
+  select(-Year) %>% 
+  group_by(Site, Taxon) %>%
+  pivot_wider(names_from  = Taxon,
+    values_from = c(Prod, Biomass),
+    names_sep   = "_")
+
+```
+
+# Calculate UVC productivity
+
+```{r uvc-data}
+
+# Format data
+
+traits <- read.csv('data/CHA23_UVC_traits.csv')
+kmax_list <- read.csv('data/DS2.csv') ##Supplemental file from from Morais and Bellwood 2019 with Kmax data in it
+
+```
+
+```{r prod-all-groups}
+
+# mapping
+diet_map <- c(
+  inv   = "Invertivore",
+  pisc  = "Piscivore",
+  det   = "Detritivore",
+  cor   = "Corallivore",
+  carn  = "Carnivore",
+  plank = "Planktivore",
+  herb  = "Herbivore",
+  omni  = "Omnivore")
+
+uvc_transect_list <- uvc_raw %>%
+  distinct(Atoll, Island, Transect, Year) 
+
+# helper: power-of-10 offset from minimum positive value
+order_of_magnitude_offset <- function(x) {
+  10 ^ floor(log10(min(x[!is.na(x) & x > 0])))
+}
+
+build_group <- function(code, diet_label) {
+  # calculate productivity per group
+  dat <- uvc_raw %>%
+    filter(Diet == diet_label) %>%
+    filter(!is.na(Length)) 
+  
+  kmax_28 <- kmax_list[kmax_list$sstmean == 28, ]
+  sp_uvc_kmax <- merge(traits, kmax_28, by = c("MaxSizeTL", "Diet", "Position"), all.x = TRUE)
+  sp_uvc_kmax_2 <- unique(sp_uvc_kmax)
+
+  dat_k <- merge(dat, sp_uvc_kmax_2, by = c("Species", "Family"), all.x = TRUE)
+
+  dat_k$Length <- ifelse(dat_k$Length > dat_k$MaxSizeTL_Prod, dat_k$MaxSizeTL_Prod, dat_k$Length)
+  dat_prod <- dat_k
+
+  dat_prod$EstAge <- (1 / dat_prod$Kmax) * log(
+    (dat_prod$MaxSizeTL_Prod) /
+      ((1 - dat_prod$Length / dat_prod$MaxSizeTL_Prod) * dat_prod$MaxSizeTL_Prod))
+
+  age <- (1:365) / 365
+
+  vb_len_tab <- matrix(
+    ncol = length(age),
+    nrow = nrow(dat_prod),
+    dimnames = list(NULL, paste("Day", 1:365, sep = "_")))
+
+  for (u in 1:nrow(dat_prod)) {
+    vb_len_tab[u, ] <- dat_prod$MaxSizeTL_Prod[u] *
+      (1 - exp(-dat_prod$Kmax[u] * (dat_prod$EstAge[u] + age)))
+  }
+
+  vb_wt_tab <- apply(vb_len_tab, 2, function(x) dat_prod$a * (x ^ dat_prod$b))
+
+  biomass_not_rounded_g <- (dat_prod$a * dat_prod$Length ^ dat_prod$b)
+  vb_wt_tab <- cbind(biomass_not_rounded_g, vb_wt_tab)
+  colnames(vb_wt_tab)[1] <- "Day_0"
+  vb_prod_wt_tab <- vb_wt_tab
+
+  for (u in 2:ncol(vb_prod_wt_tab)) {
+    for (v in 1:nrow(vb_prod_wt_tab)) {
+      vb_prod_wt_tab[v, u] <- vb_wt_tab[v, u] - vb_wt_tab[v, (u - 1)]
+    }
+  }
+
+  vb_prod_wt_tab2 <- vb_prod_wt_tab[, 2:ncol(vb_prod_wt_tab)]
+
+  dat_prod$logZyear <- (-0.0066 - (0.279 * log(dat_prod$MaxSizeTL_Prod)) +
+                          (0.6543 * log(dat_prod$Kmax)) + (0.4634 * log(28)))
+  dat_prod$Zyear <- exp(dat_prod$logZyear)
+  dat_prod$Zday <- dat_prod$Zyear / 365
+
+  psurv_tab <- matrix(ncol = 365, nrow = nrow(dat_prod), dimnames = list(NULL, paste("Day", 1:365)))
+  for (u in 1:nrow(dat_prod)) {
+    psurv_tab[u, ] <- exp(-dat_prod$Zday[u])
+  }
+
+  surv_outcome_day <- matrix(
+    rbern(length(psurv_tab), prob = as.vector(psurv_tab)),
+    nrow(psurv_tab), ncol(psurv_tab)
+  )
+
+  surv_outcome_day2 <- adply(surv_outcome_day, 1, zero_row_replace)
+  surv_outcome_day2 <- dplyr::select(surv_outcome_day2, -c(X1))
+
+  est_daily_prod_tab <- surv_outcome_day2 * vb_prod_wt_tab2
+  prod_year <- rowSums(est_daily_prod_tab)
+
+  dat_prod_final <- dat_prod
+  dat_prod_final$prod_year_g <- prod_year
+  dat_prod_final$prod_year_kg_h <- dat_prod_final$prod_year_g / dat_prod_final$Area * 10
+
+  prod_trans <- ddply(dat_prod_final, c("Year", "Atoll", "Island", "Transect"), summarise,
+                      total_prod_year = sum(prod_year_kg_h))
+  
+  # C) Join + per-group offsets
+  prod_offset   <- order_of_magnitude_offset(prod_trans$total_prod_year)
+
+  prod_df <- uvc_transect_list %>%
+    left_join(prod_trans, by = c("Year", "Atoll", "Island", "Transect")) %>%
+    mutate(Diet = diet_label,
+           Prod = ifelse(is.na(total_prod_year), prod_offset, total_prod_year + prod_offset))
+
+  list(
+    prod = prod_df,
+    offsets = c(prod_offset = prod_offset))
+}
+
+# Run for all groups
+out_list <- lapply(names(diet_map), function(code) build_group(code, diet_map[[code]]))
+names(out_list) <- names(diet_map)
+
+# Export objects 
+prod_objs    <- setNames(lapply(out_list, `[[`, "prod"),
+                         paste0("uvc_", names(out_list), ".prod.data"))
+
+list2env(prod_objs, envir = .GlobalEnv)
+
+```
+
+```{r data-outcomes-prod-uvc}
+
+outcomes_uvc <- bind_rows(uvc_inv.prod.data, 
+                      uvc_pisc.prod.data, 
+                      uvc_carn.prod.data, 
+                      uvc_plank.prod.data, 
+                      uvc_omni.prod.data, 
+                      uvc_cor.prod.data, 
+                      uvc_det.prod.data, 
+                      uvc_herb.prod.data) %>%
+  select(Prod, Island, Atoll, Year, Transect, Diet)
+
+outcomes_uvc_wide <- outcomes_uvc %>%
+  pivot_wider(
+    id_cols = c(Island, Atoll, Year, Transect),
+    names_from = Diet,
+    values_from = Prod,
+    names_glue = "{.value}_{Diet}")
+
+outcomes_uvc_wide_island <- outcomes_uvc %>%
+  group_by(Island, Atoll, Diet) %>% 
+  summarize(Prod = mean(Prod, na.rm = T)) %>% 
+  pivot_wider(
+    id_cols = c(Island, Atoll),
+    names_from = Diet,
+    values_from = Prod,
+    names_glue = "{.value}_{Diet}")
+
+```
+
+# DAG
+
+```{r dag}
+
+dag <- dagitty("
+dag {
+
+seabirds -> coral_symbiont_nutrients
+seabirds -> pom_nutrients
+seabirds -> turf_nutrients
+
+turf_nutrients -> crypto_inv_productivity
+turf_nutrients -> detritus_nutrients
+turf_nutrients -> turf_productivity
+turf_nutrients -> crypto_fish_productivity
+turf_nutrients -> omnivore_productivity
+
+turf_productivity -> herbivore_productivity
+turf_productivity -> omnivore_productivity
+turf_productivity -> crypto_fish_productivity
+turf_productivity -> crypto_inv_productivity
+
+coral_symbiont_nutrients -> coral_growth
+coral_symbiont_nutrients -> coral_host_nutrients
+
+coral_host_nutrients -> detritus_nutrients
+coral_host_nutrients -> corallivore_detritus_nutrients
+coral_host_nutrients -> corallivore_productivity
+coral_host_nutrients -> coral_growth
+
+coral_growth -> corallivore_productivity
+
+pom_nutrients -> detritus_nutrients
+pom_nutrients -> planktonic_day_nutrients
+pom_nutrients -> planktonic_night_nutrients
+
+planktonic_day_nutrients -> planktonic_day_productivity
+planktonic_day_nutrients -> planktivore_productivity
+planktonic_day_nutrients -> crypto_fish_productivity
+planktonic_day_nutrients -> omnivore_productivity
+
+planktonic_night_nutrients -> planktonic_night_productivity
+planktonic_night_nutrients -> coral_host_nutrients
+planktonic_night_nutrients -> coral_growth
+planktonic_night_nutrients -> crypto_inv_productivity
+planktonic_night_nutrients -> planktivore_productivity
+planktonic_night_nutrients -> omnivore_productivity
+
+planktonic_day_productivity -> planktivore_productivity
+planktonic_day_productivity -> omnivore_productivity
+planktonic_day_productivity -> crypto_fish_productivity
+
+planktonic_night_productivity -> crypto_inv_productivity
+planktonic_night_productivity -> coral_growth
+planktonic_night_productivity -> planktivore_productivity
+
+corallivore_detritus_nutrients -> detritus_nutrients
+fish_detritus_nutrients -> detritus_nutrients
+
+detritus_nutrients -> detritivore_productivity
+detritus_nutrients -> omnivore_productivity
+detritus_nutrients -> crypto_fish_productivity
+detritus_nutrients -> crypto_inv_productivity
+
+detritus_production -> crypto_fish_productivity
+detritus_production -> crypto_inv_productivity
+detritus_production -> detritivore_productivity
+detritus_production -> omnivore_productivity
+
+crypto_fish_productivity -> carnivore_productivity
+crypto_fish_productivity -> piscivore_productivity
+
+crypto_inv_productivity -> carnivore_productivity
+crypto_inv_productivity -> invertivore_productivity
+crypto_inv_productivity -> omnivore_productivity
+
+inv_crypto_fish_productivity -> crypto_inv_productivity
+
+herbivore_productivity -> detritus_production
+planktivore_productivity -> detritus_production
+corallivore_productivity -> detritus_production
+
+planktivore_productivity -> piscivore_productivity
+
+turf_productivity[latent]
+pom_productivity[latent]
+fish_detritus_nutrients[latent]
+planktonic_day_productivity[latent]
+planktonic_night_productivity[latent]
+
+herbivore_productivity[outcome]
+planktivore_productivity[outcome]
+detritivore_productivity[outcome]
+invertivore_productivity[outcome]
+omnivore_productivity[outcome]
+piscivore_productivity[outcome]
+carnivore_productivity[outcome]
+corallivore_productivity[outcome]
+seabirds[exposure]
+
+
+}")
+
+```
+
+# Format data
+
+```{r data-scm}
+
+uvc <- outcomes_uvc %>% 
+  left_join(mediators_nutrients_wide) %>% 
+  left_join(mediators_productivity_island_wide) %>% 
+  left_join(sb_data, by = c("Island", "Atoll")) 
+
+
+```
+
+# Calculate total effect of seabirds on fish productivity
+
+```{r total-effect}
+
+#pisc total effect 
+
+m_total_pisc <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year), 
+                              control = list(adapt_delta = 0.99, max_treedepth = 15),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Piscivore"))
+
+summary(m_total_pisc)
+hypothesis(m_total_pisc, "logSeabird_Biomass_density_prop > 0") #0.98 
+
+#inv total effect
+
+m_total_inv <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                             control = list(adapt_delta = 0.99, max_treedepth = 15), 
+                   iter = 4000, warmup = 2000,
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Invertivore"))
+
+summary(m_total_inv)
+hypothesis(m_total_inv, "logSeabird_Biomass_density_prop > 0") #0.54
+
+#plank total effect
+
+m_total_plank <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                               control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Planktivore"))
+
+summary(m_total_plank)
+hypothesis(m_total_plank, "logSeabird_Biomass_density_prop > 0") #0.84 
+
+#carn total effect
+
+m_total_carn <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                              control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Carnivore"))
+
+summary(m_total_carn)
+hypothesis(m_total_carn, "logSeabird_Biomass_density_prop > 0") #0.92
+
+#cor total effect
+
+m_total_cor <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                             control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Corallivore"))
+
+summary(m_total_cor)
+hypothesis(m_total_cor, "logSeabird_Biomass_density_prop > 0") #0.81
+
+#omni total effect
+
+m_total_omni <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                              control = list(adapt_delta = 0.9, max_treedepth = 12),
+                   iter = 4000, warmup = 2000, 
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Omnivore"))
+
+summary(m_total_omni)
+hypothesis(m_total_omni, "logSeabird_Biomass_density_prop > 0") #0.59
+
+#det total effect
+
+m_total_det <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                             control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Detritivore"))
+
+summary(m_total_det)
+hypothesis(m_total_det, "logSeabird_Biomass_density_prop > 0") #0.94
+
+#herb total effect
+
+m_total_herb <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                              control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Herbivore"))
+
+summary(m_total_herb)
+hypothesis(m_total_herb, "logSeabird_Biomass_density_prop > 0") #0.99
+
+# total
+
+uvc_tot <- uvc %>% 
+  group_by(Island, Atoll, Transect, Year) %>% 
+  summarize(Prod = sum(Prod)) %>% 
+  left_join(sb_data)
+
+m_total_tot <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
+                              control = list(adapt_delta = 0.9, max_treedepth = 12),
+  family = Gamma(link = "log"), data = uvc_tot)
+
+summary(m_total_tot)
+hypothesis(m_total_tot, "logSeabird_Biomass_density_prop > 0") #0.99
+
+# Calculate effect of doubling seabird density
+
+draws_m_total_tot <- spread_draws(m_total_tot, b_logSeabird_Biomass_density_prop)
+doubling_effect_m_total_tot <- draws_m_total_tot %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+median(doubling_effect_m_total_tot$effect_doubling)
+hdi(doubling_effect_m_total_tot$effect_doubling, ci = 0.95)
+mean(doubling_effect_m_total_tot$effect_doubling > 1)
+
+# pisc 
+draws_m_total_pisc <- spread_draws(m_total_pisc, b_logSeabird_Biomass_density_prop)
+doubling_effect_m_total_pisc <- draws_m_total_pisc %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+median(doubling_effect_m_total_pisc$effect_doubling)
+hdi(doubling_effect_m_total_pisc$effect_doubling, ci = 0.95)
+
+# herb
+draws_m_total_herb <- spread_draws(m_total_herb, b_logSeabird_Biomass_density_prop)
+doubling_effect_m_total_herb <- draws_m_total_herb %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+median(doubling_effect_m_total_herb$effect_doubling)
+hdi(doubling_effect_m_total_herb$effect_doubling, ci = 0.95)
+
+# det
+draws_m_total_det <- spread_draws(m_total_det, b_logSeabird_Biomass_density_prop)
+doubling_effect_m_total_det <- draws_m_total_det %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+median(doubling_effect_m_total_det$effect_doubling)
+hdi(doubling_effect_m_total_det$effect_doubling, ci = 0.95)
+
+# carn
+draws_m_total_carn <- spread_draws(m_total_carn, b_logSeabird_Biomass_density_prop)
+doubling_effect_m_total_carn <- draws_m_total_carn %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+median(doubling_effect_m_total_carn$effect_doubling)
+hdi(doubling_effect_m_total_carn$effect_doubling, ci = 0.95)
+```
+
+
+```{r plot-fig4a}
+
+# data
+
+pisc.pred <- uvc %>%
+  filter(Diet == "Piscivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_pisc, re_formula = NA) 
+
+inv.pred <- uvc %>%
+  filter(Diet == "Invertivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_inv, re_formula = NA) 
+
+plank.pred <- uvc %>% 
+  filter(Diet == "Planktivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_plank, re_formula = NA) 
+
+carn.pred <- uvc %>%
+  filter(Diet == "Carnivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_carn, re_formula = NA) 
+
+cor.pred <- uvc %>%
+  filter(Diet == "Corallivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_cor, re_formula = NA) 
+
+omni.pred <- uvc %>% 
+  filter(Diet == "Omnivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_omni, re_formula = NA) 
+
+det.pred <- uvc %>% 
+  filter(Diet == "Detritivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_det, re_formula = NA) 
+
+herb.pred <- uvc %>%
+  filter(Diet == "Herbivore") %>% 
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_total_herb, re_formula = NA) 
+
+#island-atoll averages
+
+plot.pisc_a <- ggplot(pisc.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) + 
+  stat_lineribbon(aes(y = log(.epred)), color = "red4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Piscivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "red4") +
+  scale_fill_manual(values = alpha(c("red4", "red1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.inv_a <- ggplot(inv.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "orange4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Invertivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "orange4") +
+  scale_fill_manual(values = alpha(c("orange4", "orange1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.plank_a <- ggplot(plank.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "turquoise4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Planktivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "turquoise4") +
+  scale_fill_manual(values = alpha(c("turquoise4", "turquoise1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.carn_a <- ggplot(carn.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "orangered4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Carnivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "orangered4") +
+  scale_fill_manual(values = alpha(c("orangered4", "orangered1"), 0.2)) +
+  scale_y_continuous(breaks = c(-2, 0, 2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off") 
+
+plot.cor_a <- ggplot(cor.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "darkorchid4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Corallivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "darkorchid4") +
+  scale_fill_manual(values = alpha(c("darkorchid4", "darkorchid1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  ylab(bquote("Log-Productivity (kg. " ~ha^-1~")")) +
+  coord_cartesian(clip = "off")
+
+plot.omni_a <- ggplot(omni.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "violetred4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Omnivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "violetred4") +
+  scale_fill_manual(values = alpha(c("violetred4", "violetred1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.det_a <- ggplot(det.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "slategray4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Detritivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "slategray4") +
+  scale_fill_manual(values = alpha(c("slategray4", "slategray1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.herb_a <- ggplot(herb.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred)), color = "seagreen4", .width = c(0.8, 0.95)) +
+  geom_point(data = uvc %>% filter(Diet == "Herbivore") %>% 
+               group_by(Atoll, Island) %>% mutate(Prod = mean(Prod)), color = "seagreen4") +
+  scale_fill_manual(values = alpha(c("seagreen4", "seagreen1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "transparent"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  coord_cartesian(clip = "off")
+
+plot.legend_fig2a <- ggplot(herb.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred))) +   # dummy layer to create legend
+  scale_fill_manual(
+    values = c("0.8"= alpha("grey80", 0.2), "0.95"=alpha("grey20", 0.2)),
+    name = "CI level") 
+
+plot_fig2a <- ggarrange(plot.herb_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.plank_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.det_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.cor_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.omni_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.carn_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.inv_a + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+          plot.pisc_a + rremove("legend") + rremove("ticks"),
+          common.legend = T, legend = "none", heights = c(rep(1,7), 1.6),
+          ncol = 1, align = "v")
+```
+
+```{r plot-fig4b}
+
+plot.herb_b <- spread_draws(m_total_herb, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  annotation_custom(img_herb, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.plank_b <- spread_draws(m_total_plank, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) + 
+  annotation_custom(img_plank, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.det_b <- spread_draws(m_total_det, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) + 
+  annotation_custom(img_det, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.cor_b <- spread_draws(m_total_cor, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) + 
+  annotation_custom(img_cor, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.omni_b <- spread_draws(m_total_omni, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  annotation_custom(img_omni, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.carn_b <- spread_draws(m_total_carn, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) + 
+  annotation_custom(img_carn, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.inv_b <- spread_draws(m_total_inv, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) + 
+  annotation_custom(img_inv, xmin = 0.1, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) + 
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 5.5, l = 15)) +
+  coord_cartesian(clip = "off")
+
+plot.pisc_b <- spread_draws(m_total_pisc, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  annotation_custom(img_pisc, xmin = 0.15, xmax = 1.5, ymin = 0, ymax = 1.3) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af"), labels = c("≤ 0", "> 0")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(limits = c(-0.2, 0.4)) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  guides(fill = guide_legend(title = "Effect direction")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(colour = "white"),
+        axis.title.x = element_text(vjust = -2),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent")) +
+  labs(x = "Posterior estimate") +
+  theme(plot.margin = margin(t = 5.5, r = 90, b = 15, l = 15)) +
+  coord_cartesian(clip = "off")
+
+legend_fig2a <- get_legend(plot.legend_fig2a) 
+
+legend_fig2b <- get_legend(plot.pisc_b) 
+
+blank_legend <- get_legend(plot.legend_fig2a)  +
+    theme(legend.position = "right",
+      plot.margin = margin(0, 0, 0, l = 20),
+      legend.box.margin = margin(0, 0, 0, l = 20))
+
+legend_fig2 <- ggarrange(blank_legend, legend_fig2a, legend_fig2b, blank_legend, align = "hv", nrow = 4) 
+  
+plot_fig2b <- ggarrange(plot.herb_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.plank_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.det_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.cor_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.omni_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.carn_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.inv_b + rremove("xlab") + rremove("x.text") + rremove("legend") + rremove("ticks"), 
+                        plot.pisc_b + rremove("ticks"),
+                        legend = "none", heights = c(rep(1,7), 1.5),
+                        ncol = 1)  
+
+plot_fig2 <- ggarrange(legend_fig2, plot_fig2a, plot_fig2b, legend = "none", ncol = 3, align = "hv", labels = c("", "a", "b"), widths = c(0.6, 0.9, 1.4))
+
+#plot_fig2
+
+ggsave("figures/main/Fig2b.png", plot_fig2, width = 6, height = 8, units = "in", dpi = 600)
+  
+```
+
+##I. Basal resources
+
+# I. A. Nutrients
+
+```{r direct effect-basal-resources-n15}
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "turf_nutrients",
+  effect = "direct")
+
+# turf
+
+dat_turf_n15 <- mediators_nutrients %>% filter(Taxon == "Turf") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop))
+
+m_turf_n15 <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_turf_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_turf_n15)
+hypothesis(m_turf_n15, "logSeabird_Biomass_density_prop > 0") #0.91
+
+# plankton
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "pom_nutrients",
+  effect = "direct")
+
+#{}
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "pom_nutrients",
+  effect = "total")
+
+#{}
+
+dat_pom_n15 <- mediators_nutrients %>% filter(Taxon == "POM") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop))
+
+m_pom_n15 <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_pom_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_pom_n15)
+hypothesis(m_pom_n15, "logSeabird_Biomass_density_prop > 0") #0.92
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "planktonic_night_nutrients",
+  effect = "direct")
+
+#{ pom_nutrients }
+
+dat_plank_night_n15 <- mediators_nutrients %>% filter(Taxon == "Plank_night") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop)) %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+prior_n15 <- c(
+  prior(normal(0, 0.5), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(2), class = "sd"))
+
+m_plank_night_n15_direct <- brm(N15 ~ logSeabird_Biomass_density_prop + N15_POM + (1|Atoll/Island), data = dat_plank_night_n15, prior = prior_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_plank_night_n15_direct)
+hypothesis(m_plank_night_n15_direct, "logSeabird_Biomass_density_prop > 0") #0.7
+hypothesis(m_plank_night_n15_direct, "N15_POM > 0") #0.53
+
+m_plank_night_n15_total <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_plank_night_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_plank_night_n15_total)
+hypothesis(m_plank_night_n15_total, "logSeabird_Biomass_density_prop > 0") #0.85
+
+dat_plankton_n15 <- mediators_nutrients %>% filter(Taxon == "Plankton") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop)) %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+m_plankton_n15_total <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_plankton_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_plankton_n15_total)
+hypothesis(m_plankton_n15_total, "logSeabird_Biomass_density_prop > 0") #0.7
+
+m_plankton_n15_direct <- brm(N15 ~ logSeabird_Biomass_density_prop + N15_POM + (1|Atoll/Island), data = dat_plankton_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_plankton_n15_direct)
+hypothesis(m_plankton_n15_direct, "logSeabird_Biomass_density_prop > 0") #0.7
+hypothesis(m_plankton_n15_direct, "N15_POM > 0") #0.62
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "coral_symbiont_nutrients",
+  effect = "total")
+
+#{} total = direct
+
+dat_symbiont_n15 <- mediators_nutrients %>% filter(Taxon == "Symbiont") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop))
+
+m_symbiont_n15 <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_symbiont_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_symbiont_n15)
+hypothesis(m_symbiont_n15, "logSeabird_Biomass_density_prop > 0") #0.93
+
+dat_host_n15 <- mediators_nutrients %>% filter(Taxon == "Coral") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop))
+
+m_host_n15 <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_host_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_host_n15)
+hypothesis(m_host_n15, "logSeabird_Biomass_density_prop > 0") #0.91
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "detritus_nutrients",
+  effect = "direct")
+
+# { coral_host_nutrients, pom_nutrients, turf_nutrients }
+
+dat_det_n15 <- mediators_nutrients %>% filter(Taxon == "Detritus") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop))
+
+m_det_n15_total <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_det_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_det_n15_total)
+hypothesis(m_det_n15_total, "logSeabird_Biomass_density_prop > 0") #0.99
+
+dat_det_n15_direct <- mediators_nutrients %>% filter(Taxon == "Detritus") %>% left_join(sb_data, by =c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop)) %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+m_det_n15_direct <- brm(N15 ~ logSeabird_Biomass_density_prop + N15_Turf + N15_POM + N15_Coral + (1|Atoll/Island), prior = prior_n15, data = dat_det_n15_direct, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_det_n15_direct)
+hypothesis(m_det_n15_direct, "logSeabird_Biomass_density_prop > 0") #0.57
+hypothesis(m_det_n15_direct, "N15_Turf > 0") #0.5
+hypothesis(m_det_n15_direct, "N15_POM > 0") #0.5
+hypothesis(m_det_n15_direct, "N15_Coral > 0") #0.57
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "corallivore_detritus_nutrients",
+  effect = "total")
+
+dat_chaetrif_det_n15 <- mediators_nutrients %>% filter(Taxon == "Chaetrif_detritus") %>% left_join(sb_data, by = c("Island", "Atoll", "Seabird_Biomass_density_prop")) %>% 
+  mutate(logSeabird_Biomass_density_prop = log(Seabird_Biomass_density_prop)) %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+m_chaetrif_det_n15_total <- brm(N15 ~ logSeabird_Biomass_density_prop + (1|Atoll/Island), data = dat_chaetrif_det_n15, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_chaetrif_det_n15_total)
+hypothesis(m_chaetrif_det_n15_total, "logSeabird_Biomass_density_prop > 0") #0.89
+
+
+```
+
+```{r plot-figs3}
+
+#turf
+
+turf_n15.pred <- dat_turf_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_turf_n15, re_formula = NA) 
+
+plot.turf_n15 <- ggplot(turf_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  annotation_custom(img_turf_n15, xmin = -1.6, xmax = 0.7, ymin = 6.7, ymax = 8) +
+  stat_lineribbon(aes(y = .epred), color = "seagreen4") +
+  geom_point(data = dat_turf_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "seagreen4") +
+  scale_fill_manual(values = alpha(c("seagreen3", "seagreen", "seagreen4"), 0.2)) +
+  ylab(expression(Turf~delta^15*N~"\U2030")) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#symbiont
+
+symbiont_n15.pred <- dat_symbiont_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_symbiont_n15, re_formula = NA) 
+
+plot.symbiont_n15 <- ggplot(symbiont_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  annotation_custom(img_symbiont_n15, xmin = -3.2, xmax = 0.4, ymin = 7.6, ymax = 8.9) +
+  stat_lineribbon(aes(y = .epred), color = "darkorchid4") +
+  geom_point(data = dat_symbiont_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "darkorchid4") +
+  scale_fill_manual(values = alpha(c("darkorchid4", "darkorchid3", "darkorchid1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Coral "~symbiont~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#effect line
+
+pom_n15.pred <- dat_pom_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_pom_n15, re_formula = NA) 
+
+plot.pom_n15 <- ggplot(pom_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  annotation_custom(img_pom_n15, xmin = -3, xmax = -0.3, ymin = 7.9, ymax = 9.3) +
+  stat_lineribbon(aes(y = .epred), color = "turquoise4") +
+  geom_point(data = dat_pom_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "turquoise4") +
+  scale_fill_manual(values = alpha(c("turquoise4", "turquoise3", "turquoise1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Particulate Organic "~Matter~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#effect line
+
+det_n15.pred <- dat_det_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_det_n15_total, re_formula = NA) 
+
+plot.det_n15 <- ggplot(det_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  annotation_custom(img_det_n15, xmin = -2, xmax = 0.6, ymin = 6.9, ymax = 8.1) +
+  stat_lineribbon(aes(y = .epred), color = "slategray4") +
+  geom_point(data = dat_det_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "slategray4") +
+  scale_fill_manual(values = alpha(c("slategray3", "slategray", "slategray4"), 0.3)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression(Detritus~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+plot_fig1_a.a <- ggarrange(plot.turf_n15, plot.pom_n15, plot.symbiont_n15, plot.det_n15, nrow = 1)
+  
+plot_fig1_a <- annotate_figure(plot_fig1_a.a, bottom = text_grob(bquote(Seabird~biomass~(kg~ha^-1)), size = 11))
+
+plot_fig1_a
+
+# supp figure
+
+# plank_night
+
+turf_n15.pred <- dat_turf_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_turf_n15, re_formula = NA) 
+
+plot.turf_n15 <- ggplot(turf_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  annotation_custom(img_turf_n15, xmin = -1.6, xmax = 0.7, ymin = 6.7, ymax = 8) +
+  stat_lineribbon(aes(y = .epred), color = "seagreen4") +
+  geom_point(data = dat_turf_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "seagreen4") +
+  scale_fill_manual(values = alpha(c("seagreen3", "seagreen", "seagreen4"), 0.2)) +
+  ylab(expression(Turf~delta^15*N~"\U2030")) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#host
+
+host_n15.pred <- dat_host_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_host_n15, re_formula = NA) 
+
+plot.host_n15 <- ggplot(host_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  stat_lineribbon(aes(y = .epred), color = "darkorchid4") +
+  geom_point(data = dat_host_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "darkorchid4") +
+  scale_fill_manual(values = alpha(c("darkorchid4", "darkorchid3", "darkorchid1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Coral "~host~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#effect line
+
+plank_night_n15.pred <- dat_plank_night_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_plank_night_n15_total, re_formula = NA) 
+
+plot.plank_night_n15 <- ggplot(plank_night_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  stat_lineribbon(aes(y = .epred), color = "turquoise4") +
+  geom_point(data = dat_plank_night_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "turquoise4") +
+  scale_fill_manual(values = alpha(c("turquoise4", "turquoise3", "turquoise1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Night "~Zooplankton~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+plankton_n15.pred <- dat_plankton_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_plankton_n15_total, re_formula = NA) 
+
+plot.plankton_n15 <- ggplot(plankton_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  stat_lineribbon(aes(y = .epred), color = "turquoise4") +
+  geom_point(data = dat_plankton_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "turquoise4") +
+  scale_fill_manual(values = alpha(c("turquoise4", "turquoise3", "turquoise1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Day "~Zooplankton~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+#corallivore feces
+
+chaetrif_det_n15.pred <- dat_chaetrif_det_n15 %>%
+  data_grid(logSeabird_Biomass_density_prop = seq_range(logSeabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_chaetrif_det_n15_total, re_formula = NA) 
+
+plot.chaetrif_det_n15 <- ggplot(chaetrif_det_n15.pred, aes(x = logSeabird_Biomass_density_prop, y = N15)) + 
+  stat_lineribbon(aes(y = .epred), color = "slategray4") +
+  geom_point(data = dat_chaetrif_det_n15 %>% group_by(Atoll, Island, logSeabird_Biomass_density_prop) %>% summarize(N15 = mean(N15, na.rm = T)), color = "slategray4") +
+  scale_fill_manual(values = alpha(c("slategray3", "slategray", "slategray4"), 0.3)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab(expression("Corallivore "~detritus~delta^15*N~"\U2030")) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+plot_fig_supp_a <- ggarrange(plot.plank_night_n15, plot.plankton_n15, plot.host_n15, plot.chaetrif_det_n15, nrow = 1)
+  
+plot_fig_supp_a.a <- annotate_figure(plot_fig_supp_a, bottom = text_grob(bquote(Seabird~biomass~(kg~ha^-1)), size = 11))
+
+#legend
+
+plot.legend.supp <- ggplot(plank_night_n15.pred,
+  aes(x = logSeabird_Biomass_density_prop, y = .epred)) +
+  stat_lineribbon() +
+  scale_fill_manual(
+     values = c("0.5" = alpha("grey80", 0.2), "0.8"= alpha("grey50", 0.2), "0.95"=alpha("grey20", 0.2)),
+     name = "CI level") +
+  theme(legend.position = "right")
+
+legend_supp <- cowplot::get_legend(plot.legend.supp)
+
+plot_fig_supp <- ggarrange(legend_supp, plot_fig_supp_a.a, nrow = 1, widths = c(0.15, 1)) 
+
+#ggsave("figures/supp/FigS3.png", plot_fig_supp, width = 8, height = 2.5, units = "in", dpi = 600)
+
+```
+
+# I. B. Production
+
+```{r direct effect-crypto-inv-site}
+
+# 1. Crypto_inv_productivity
+
+dat_crypto_inv_prod_site <- prod_inv_data_site %>% 
+  group_by(Site, Atoll, Island) %>% 
+  summarize(Prod = mean(Prod, na.rm = T)) %>% #individual prod already accounts for Area
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island")) %>% 
+  left_join(mediators_productivity_site_wide, by = c("Site", "Atoll", "Island")) %>% 
+  left_join(sb_data, by = c("Atoll", "Island")) %>% 
+  left_join(outcomes_uvc_wide_island, by = c("Atoll", "Island")) %>% 
+  left_join(egestion_dat_island, by = c("Atoll", "Island"))
+
+prior_crypto_inv_prod_site <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd"),
+  prior(exponential(1), class = "shape"))
+
+# turf -> crypto_inv_productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients", 
+  outcome = "crypto_inv_productivity",
+  effect = "total")
+
+#can't do direct
+#{ coral_symbiont_nutrients, pom_nutrients }
+#{ seabirds }
+
+m_crypto_inv_prod_turf_plank_total_site <- brm(Prod ~ N15_Turf + N15_POM + N15_Symbiont + (1|Atoll/Island), data = dat_crypto_inv_prod_site, prior = prior_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_turf_plank_total_site)
+hypothesis(m_crypto_inv_prod_turf_plank_total_site, "N15_Turf > 0") #0.49
+hypothesis(m_crypto_inv_prod_turf_plank_total_site, "N15_POM > 0") #0.49
+hypothesis(m_crypto_inv_prod_turf_plank_total_site, "N15_Symbiont > 0") #0.37
+
+# plank_night
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "crypto_inv_productivity",
+  effect = "total")
+
+#{ pom_nutrients }
+
+m_crypto_inv_prod_plank_total_site <- brm(Prod ~ N15_Plank_night + N15_POM + (1|Atoll/Island), data = dat_crypto_inv_prod_site, prior = prior_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_plank_total_site)
+hypothesis(m_crypto_inv_prod_plank_total_site, "N15_POM > 0") #0.37
+hypothesis(m_crypto_inv_prod_plank_total_site, "N15_Plank_night > 0") #0.43
+
+adjustmentSets(dag,
+  exposure = "detritus_nutrients",
+  outcome = "crypto_inv_productivity",
+  effect = "direct")
+
+#{ coral_host_nutrients, pom_nutrients, turf_nutrients }
+
+m_crypto_inv_prod_det_n15_site <- brm(Prod ~ N15_Detritus + N15_Coral + N15_POM + N15_Turf + (1|Atoll/Island), data = dat_crypto_inv_prod_site, prior = prior_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_det_n15_site)
+hypothesis(m_crypto_inv_prod_det_n15_site, "N15_Turf > 0") #0.49
+hypothesis(m_crypto_inv_prod_det_n15_site, "N15_POM > 0") #0.49
+hypothesis(m_crypto_inv_prod_det_n15_site, "N15_Coral > 0") #0.39
+hypothesis(m_crypto_inv_prod_det_n15_site, "N15_Detritus > 0") #0.49
+
+adjustmentSets(dag,
+  exposure = "detritus_production", 
+  outcome = "crypto_inv_productivity",
+  effect = "total")
+
+# total = direct =
+#{ herbivore_productivity, planktivore_productivity, corallivore_productivity }
+
+m_crypto_inv_prod_det_prod_site <- brm(Prod ~ log(Wc) + log(Prod_Herbivore) + log(Prod_Planktivore) + log(Prod_Corallivore) + (1|Atoll/Island), data = dat_crypto_inv_prod_site, prior = prior_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_det_prod_site)
+hypothesis(m_crypto_inv_prod_det_prod_site, "logWc > 0") #0.33
+
+# 3. seabirds -> crypto_inv_productivity
+
+adjustmentSets(dag,
+  exposure = "seabirds",
+  outcome = "crypto_inv_productivity",
+  effect = "total")
+
+# {}
+
+m_crypto_inv_prod_sb_total_site <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island), data = dat_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_sb_total_site)
+hypothesis(m_crypto_inv_prod_sb_total_site, "logSeabird_Biomass_density_prop > 0") #0.25
+
+adjustmentSets(dag,
+  exposure = "seabirds",
+  outcome = "crypto_inv_productivity",
+  effect = "direct")
+
+#{ pom_nutrients, turf_nutrients, coral_symbiont_nutrients }
+
+m_crypto_inv_prod_sb_direct_site <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_POM + N15_Turf + N15_Symbiont + (1|Atoll/Island), data = dat_crypto_inv_prod_site, prior = prior_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_sb_direct_site)
+hypothesis(m_crypto_inv_prod_sb_direct_site, "logSeabird_Biomass_density_prop > 0") #0.45
+hypothesis(m_crypto_inv_prod_sb_direct_site, "N15_POM > 0") #0.5
+hypothesis(m_crypto_inv_prod_sb_direct_site, "N15_Turf > 0") #0.51
+hypothesis(m_crypto_inv_prod_sb_direct_site, "N15_Symbiont > 0") #0.47
+
+adjustmentSets(dag,
+  exposure = "inv_crypto_fish_productivity",
+  outcome = "crypto_inv_productivity",
+  effect = "direct")
+
+# total = direct =  {}
+
+m_crypto_inv_prod_inv_crypto_fish_site <- brm(Prod ~ log(Prod_Inv_crypto_fish) + (1|Atoll/Island), data = dat_crypto_inv_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_inv_prod_inv_crypto_fish_site)
+hypothesis(m_crypto_inv_prod_inv_crypto_fish_site, "logProd_Inv_crypto_fish > 0") #0.06
+
+```
+
+
+```{r direct effect-crypto-fish-site}
+
+# 1. Crypto fish productivity
+
+# data
+
+dat_crypto_fish_prod_site <- crypto_fish.site.prod.data %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island")) %>% 
+  left_join(mediators_productivity_site_wide, by = c("Site", "Atoll", "Island")) %>% 
+  left_join(outcomes_uvc_wide_island, by = c("Atoll", "Island")) %>% 
+  left_join(egestion_dat_island, by = c("Atoll", "Island"))
+
+prior_crypto_fish_prod_site <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd"),
+  prior(exponential(1), class = "shape"))
+
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients",
+  outcome = "crypto_fish_productivity",
+  effect = "total")
+
+#total 
+
+#{ coral_symbiont_nutrients, pom_nutrients }
+#{ seabirds }
+
+m_crypto_fish_prod_n15_total_site <- brm(Prod ~ N15_Symbiont + N15_POM + N15_Turf + (1|Atoll/Island), data = dat_crypto_fish_prod_site, prior = prior_crypto_fish_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_fish_prod_n15_total_site)
+hypothesis(m_crypto_fish_prod_n15_total_site, "N15_Symbiont > 0") #0.49
+hypothesis(m_crypto_fish_prod_n15_total_site, "N15_Turf > 0") #0.49
+hypothesis(m_crypto_fish_prod_n15_total_site, "N15_POM > 0") #0.5
+
+adjustmentSets(dag,
+  exposure = "detritus_nutrients",
+  outcome = "crypto_fish_productivity",
+  effect = "direct")
+
+#{ coral_host_nutrients, pom_nutrients, turf_nutrients }
+
+m_crypto_fish_prod_det_n15_site <- brm(Prod ~ N15_Detritus + N15_Coral + N15_POM + N15_Turf + (1|Atoll/Island), data = dat_crypto_fish_prod_site, prior = prior_crypto_fish_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+hypothesis(m_crypto_fish_prod_det_n15_site, "N15_Detritus > 0") #0.5
+
+adjustmentSets(dag,
+  exposure = "detritus_production",
+  outcome = "crypto_fish_productivity",
+  effect = "direct")
+
+#{ corallivore_productivity,herbivore_productivity, planktivore_productivity }
+
+m_crypto_fish_prod_det_prod_site <- brm(Prod ~ log(Wc) + log(Prod_Planktivore) + log(Prod_Herbivore) + log(Prod_Corallivore) + (1|Atoll/Island), data = dat_crypto_fish_prod_site, prior = prior_crypto_fish_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_fish_prod_det_prod_site)
+hypothesis(m_crypto_fish_prod_det_prod_site, "logWc > 0") #0.68
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients",
+  outcome = "crypto_fish_productivity",
+  effect = "direct")
+
+# can't do (no turf prod data)
+
+# 3. seabirds -> crypto_fish_productivity
+
+adjustmentSets(dag,
+  exposure = "seabirds",
+  outcome = "crypto_fish_productivity",
+  effect = "total")
+
+# {}
+
+m_crypto_fish_prod_sb_total_site <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island), data = dat_crypto_fish_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_fish_prod_sb_total_site)
+hypothesis(m_crypto_fish_prod_sb_total_site, "logSeabird_Biomass_density_prop > 0") #0.96
+
+# stats
+
+draws_m_crypto_fish_prod_sb_total_site <- spread_draws(m_crypto_fish_prod_sb_total_site, b_logSeabird_Biomass_density_prop)
+
+doubling_effect_m_crypto_fish_prod_sb_total_site <- draws_m_crypto_fish_prod_sb_total_site %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+
+median(doubling_effect_m_crypto_fish_prod_sb_total_site$effect_doubling)
+
+hdi(doubling_effect_m_crypto_fish_prod_sb_total_site$effect_doubling, ci = 0.95)
+
+mean(doubling_effect_m_crypto_fish_prod_sb_total_site$effect_doubling > 1)
+
+adjustmentSets(dag,
+  exposure = "seabirds",
+  outcome = "crypto_fish_productivity",
+  effect = "direct")
+
+#{ coral_symbiont_nutrients, pom_nutrients, turf_nutrients }
+
+m_crypto_fish_prod_sb_direct_site <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_Turf + N15_POM + N15_Symbiont + (1|Atoll/Island), prior = prior_crypto_fish_prod_site, data = dat_crypto_fish_prod_site, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_crypto_fish_prod_sb_direct_site)
+hypothesis(m_crypto_fish_prod_sb_direct_site, "logSeabird_Biomass_density_prop > 0") #0.48
+hypothesis(m_crypto_fish_prod_sb_direct_site, "N15_POM > 0") #0.51
+hypothesis(m_crypto_fish_prod_sb_direct_site, "N15_Turf > 0") #0.5
+hypothesis(m_crypto_fish_prod_sb_direct_site, "N15_Symbiont > 0") #0.5
+
+```
+
+```{r direct effect-detritus}
+
+wc_dat <- egestion_dat %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island"))
+
+prior_wc <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd"),
+  prior(exponential(1), class = "shape"))
+
+# total
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "detritus_production",
+  effect = "total")
+
+# {}
+
+m_Wc_total <- brm(Wc ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year), prior = prior_wc, data = wc_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12)) 
+
+summary(m_Wc_total)
+hypothesis(m_Wc_total, "logSeabird_Biomass_density_prop > 0") #1
+
+draws_m_Wc_total <- spread_draws(m_Wc_total, b_logSeabird_Biomass_density_prop)
+
+doubling_effect_m_Wc_total <- draws_m_Wc_total %>%
+  mutate(effect_doubling = exp(b_logSeabird_Biomass_density_prop * log(2)))
+
+median(doubling_effect_m_Wc_total$effect_doubling)
+
+hdi(doubling_effect_m_Wc_total$effect_doubling, ci = 0.95)
+
+mean(doubling_effect_m_Wc_total$effect_doubling > 1)
+
+#direct
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "detritus_production",
+  effect = "direct")
+
+#no planktivore or herbivore productivity:
+#{ coral_symbiont_nutrients, pom_nutrients, turf_nutrients }
+
+m_Wc_direct <- brm(Wc ~ log(Seabird_Biomass_density_prop) + N15_Symbiont + N15_POM + N15_Turf + (1|Atoll/Island) + (1|Year), prior = prior_wc, data = wc_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12)) 
+
+summary(m_Wc_direct)
+hypothesis(m_Wc_direct, "N15_POM > 0") #0.51
+hypothesis(m_Wc_direct, "N15_Turf > 0") #0.5
+hypothesis(m_Wc_direct, "N15_Symbiont > 0") #0.52
+hypothesis(m_Wc_direct, "logSeabird_Biomass_density_prop > 0") #0.51
+
+# effect mediated by those
+
+
+```
+
+```{r direct effect-coral-growth}
+
+#Coral performance/growth (production)
+
+# data
+
+coral_growth_dat <- read.csv("data/Acropora_SIA_Growth.csv") %>% 
+  select(Atoll, Island, Host_N15, Symbiont_N15, diff_SA_year) %>% 
+  rename(Growth = diff_SA_year) %>% 
+  left_join(sb_data, by = c("Atoll", "Island")) %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island"))
+
+# coral symbiont nutrients -> coral growth
+
+adjustmentSets(dag,
+  exposure = "coral_symbiont_nutrients", 
+  outcome = "coral_growth",
+  effect = "total")
+
+# total
+#{ planktonic_night_nutrients }
+#{ pom_nutrients }
+#{ seabirds }
+
+m_growth_symbiont_total <- brm(Growth ~ Symbiont_N15 + N15_Plank_night + (1|Atoll/Island), data = coral_growth_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_growth_symbiont_total)
+hypothesis(m_growth_symbiont_total, "Symbiont_N15 > 0") #0.83
+hypothesis(m_growth_symbiont_total, "N15_Plank_night > 0") #0.65
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "coral_symbiont_nutrients", 
+  outcome = "coral_growth",
+  effect = "direct")
+
+# {coral_host_nutrients, planktonic_night_nutrients}
+
+m_growth_symbiont_direct <- brm(Growth ~ Symbiont_N15 + Host_N15 + N15_Plank_night + (1|Atoll/Island), data = coral_growth_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_growth_symbiont_direct)
+hypothesis(m_growth_symbiont_direct, "Symbiont_N15 > 0") #0.35
+hypothesis(m_growth_symbiont_direct, "Host_N15 > 0") #0.78
+hypothesis(m_growth_symbiont_direct, "N15_Plank_night > 0") #0.6
+
+# coral_host_nutrients -> coral_growth
+
+adjustmentSets(dag,
+  exposure = "coral_host_nutrients", 
+  outcome = "coral_growth",
+  effect = "direct")
+
+# see above
+
+# night_plankton -> coral growth
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "coral_growth",
+  effect = "direct")
+
+# can't do direct 
+
+#total = { coral_symbiont_nutrients }
+#{ seabirds }
+#{ pom_nutrients }
+
+# seabirds -> coral growth
+
+# total
+
+m_growth_sb_total <- brm(Growth ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island), data = coral_growth_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_growth_sb_total)
+hypothesis(m_growth_sb_total, "logSeabird_Biomass_density_prop > 0") #0.67
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "coral_growth",
+  effect = "direct")
+
+# { coral_symbiont_nutrients, planktonic_night_nutrients }
+
+m_growth_sb_direct <- brm(Growth ~ log(Seabird_Biomass_density_prop) + Symbiont_N15 + N15_Plank_night + (1|Atoll/Island), data = coral_growth_dat, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_growth_sb_direct)
+hypothesis(m_growth_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.35
+hypothesis(m_growth_sb_direct, "Symbiont_N15 > 0") #0.76
+hypothesis(m_growth_sb_direct, "N15_Plank_night > 0") #0.7
+```
+
+```{r plot-basal-production}
+
+coral_growth.pred <- coral_growth_dat %>%
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_growth_sb_total, re_formula = NA) 
+
+plot.coral_growth <- ggplot(coral_growth.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Growth))) + 
+  annotation_custom(img_coral_prod, xmin = -1.7, xmax = 1.5, ymin = 6.4, ymax = 9.6) +
+  stat_lineribbon(aes(y = log(.epred)), color = "darkorchid4") +
+  geom_point(data = coral_growth_dat, color = "darkorchid4") +
+  scale_fill_manual(values = alpha(c("darkorchid4", "darkorchid3", "darkorchid1"), 0.2)) +
+  ylab("Log-Coral growth (cm² y⁻¹)") +
+  ylab(expression(Log-Coral~growth~(cm^2~yr^-1))) +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9, lineheight = 1),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off", ylim = c(2, 9))
+
+wc.pred <- wc_dat %>%
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_Wc_total, re_formula = NA) 
+
+plot.wc <- ggplot(wc.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Wc))) + 
+  annotation_custom(img_det_prod, xmin = -3.2, xmax = 2, ymin = -3, ymax = -1) +
+  stat_lineribbon(aes(y = log(.epred)), color = "slategray4") +
+  geom_point(data = wc_dat %>% group_by(Atoll, Island) %>% mutate(Wc = mean(Wc, na.rm = T)), color = "slategray4") +
+  scale_fill_manual(values = alpha(c("slategray3", "slategray", "slategray4"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab("Log-Detritus production\n(mg C m⁻² day⁻¹)") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 9, lineheight = 0.8),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+crypto_inv.pred <- dat_crypto_inv_prod_site %>%
+  data_grid(Seabird_Biomass_density_prop = seq_range(Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_crypto_inv_prod_sb_total_site, re_formula = NA) 
+
+plot.crypto_inv <- ggplot(crypto_inv.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  annotation_custom(img_inv_prod, xmin = 2.2, xmax = 8, ymin = 3, ymax = 4.2) +
+  stat_lineribbon(aes(y = log(.epred)), color = "orange4") +
+  geom_point(data = dat_crypto_inv_prod_site, color = "orange4") +
+  scale_fill_manual(values = alpha(c("orange4", "orange3", "orange1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab("Log-Cryptic invertebrate\nproduction (kg ha⁻¹ y⁻¹)") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(size = 9, lineheight = 0.8),
+        axis.title.x = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off", ylim = c(0, 4))
+
+crypto_fish.pred <- dat_crypto_fish_prod_site %>%
+  data_grid(Seabird_Biomass_density_prop = seq_range(dat_crypto_fish_prod_site$Seabird_Biomass_density_prop, n = 100)) %>%  
+  add_epred_draws(m_crypto_fish_prod_sb_total_site, re_formula = NA) 
+
+plot.crypto_fish <- ggplot(crypto_fish.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) + 
+  annotation_custom(img_fish_prod, xmin = -1.9, xmax = 1.7, ymin = 3.8, ymax = 6.3) +
+  stat_lineribbon(aes(y = log(.epred)), color = "red4") +
+  geom_point(data = dat_crypto_fish_prod_site, color = "red4") +
+  scale_fill_manual(values = alpha(c("red4", "red3", "red1"), 0.2)) +
+  xlab(bquote(Log-Seabird~biomass~(kg~ha^-1))) +
+  ylab("Log-Cryptobenthic fish\nproduction (kg ha⁻¹ y⁻¹)") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.title.y = element_text(size = 9, lineheight = 0.8),
+        axis.title.x = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent"),
+        legend.position = "none") +
+  coord_cartesian(clip = "off")
+
+plot.legend <- ggplot(crypto_fish.pred, aes(x = log(Seabird_Biomass_density_prop), y = log(Prod))) +
+  stat_lineribbon(aes(y = log(.epred))) +   # dummy layer to create legend
+  scale_fill_manual(
+    values = c("0.5" = alpha("grey80", 0.2), "0.8"= alpha("grey50", 0.2), "0.95"=alpha("grey20", 0.2)),
+    name = "CI level") 
+
+legend <- get_legend(plot.legend)
+
+plot_fig1_b.a <- ggarrange(plot.crypto_fish, plot.crypto_inv, plot.coral_growth, plot.wc, nrow = 1)
+  
+plot_fig1_b <- annotate_figure(plot_fig1_b.a, bottom = text_grob(bquote(Seabird~biomass~(kg~ha^-1)), size = 11))
+
+
+plot_fig1.noleg <- ggarrange(plot_fig1_a, plot_fig1_b, nrow = 2, labels = c("a", "b"))
+
+plot_fig1 <- ggarrange(legend, plot_fig1.noleg, nrow = 1, widths = c(0.15, 1)) 
+
+#ggsave("figures/main/Fig1.png", plot_fig1, width = 8, height = 5, units = "in", dpi = 600)
+
+
+```
+
+##II. Herbivores
+
+```{r direct effect-herbivore}
+
+# data
+
+uvc_herb_prod_direct <- uvc %>% 
+  filter(Diet == "Herbivore") 
+
+# already established effect of seabirds on turf above. Now effect of turf N15 on herb productivity
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients", 
+  outcome = "herbivore_productivity",
+  effect = "total")
+
+m_herb_prod_turf <- brm(Prod ~ N15_Turf + (1|Atoll/Island) + (1|Year), data = uvc_herb_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_herb_prod_turf)
+hypothesis(m_herb_prod_turf, "N15_Turf > 0") #0.63
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "herbivore_productivity",
+  effect = "direct")
+
+#{ turf_nutrients }
+
+m_herb_prod_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_Turf + (1|Atoll/Island) + (1|Year), data = uvc_herb_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_herb_prod_direct)
+hypothesis(m_herb_prod_direct, "logSeabird_Biomass_density_prop > 0") #0.96
+hypothesis(m_herb_prod_direct, "N15_Turf > 0") #0.14 #turf productivity
+
+```
+
+##III. Planktivores
+
+```{r direct effect-plank}
+
+# pom_nutrients -> planktonic_day_nutrients
+
+adjustmentSets(dag,
+  exposure = "pom_nutrients", 
+  outcome = "planktonic_day_nutrients",
+  effect = "direct")
+
+# total = direct = {}
+
+# data
+
+plank_day_dat <- mediators_nutrients %>% filter(Taxon == "Plankton") %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island"))
+
+uvc_plank_prod_direct <- uvc %>% 
+  filter(Diet == "Planktivore") 
+
+m_plank_day_pom <- brm(N15 ~ N15_POM + (1|Atoll/Island), data = plank_day_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_plank_day_pom)
+hypothesis(m_plank_day_pom, "N15_POM > 0") #0.8
+
+# pom_nutrients -> planktonic_night_nutrients
+
+adjustmentSets(dag,
+  exposure = "pom_nutrients", 
+  outcome = "planktonic_night_nutrients",
+  effect = "direct")
+
+# total = direct = {}
+
+plank_night_dat <- mediators_nutrients %>% filter(Taxon == "Plank_night") %>% 
+  left_join(mediators_nutrients_wide, by = c("Atoll", "Island"))
+
+m_plank_night_pom <- brm(N15 ~ N15_POM + (1|Atoll/Island), data = plank_night_dat, control = list(adapt_delta = 0.999, max_treedepth = 12))
+
+summary(m_plank_night_pom)
+hypothesis(m_plank_night_pom, "N15_POM > 0") #0.62 #makes sense
+
+# because of collinearity, cannot do what follows
+
+# plank_day_nutrients -> planktivore_productivity
+
+adjustmentSets(dag,
+  exposure = "planktonic_day_nutrients", 
+  outcome = "planktivore_productivity",
+  effect = "total")
+
+# { pom_nutrients }
+
+
+adjustmentSets(dag,
+  exposure = "planktonic_day_nutrients", 
+  outcome = "planktivore_productivity",
+  effect = "direct")
+
+# Cannot do because cannot block planktonic productivity (latent)
+
+m_plank_prod_plank_day_total <- brm(Prod ~ N15_Plankton + N15_POM + (1|Atoll/Island) + (1|Year), data = uvc_plank_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_plank_prod_plank_day_total)
+hypothesis(m_plank_prod_plank_day_total, "N15_Plankton > 0") #0.33
+hypothesis(m_plank_prod_plank_day_total, "N15_POM > 0") #0.82
+
+m_plank_prod_plank_day_total_b <- brm(Prod ~ N15_Plankton + N15_Plank_night + (1|Atoll/Island) + (1|Year), data = uvc_plank_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_plank_prod_plank_day_total_b)
+hypothesis(m_plank_prod_plank_day_total_b, "N15_Plankton > 0") #0.82
+hypothesis(m_plank_prod_plank_day_total_b, "N15_Plank_night > 0") #0.11
+
+# plank_night_nutrients -> planktivore_productivity
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "planktivore_productivity",
+  effect = "total")
+
+# can't do direct
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "planktivore_productivity",
+  effect = "direct")
+
+#can't estimate
+
+# now look at seabirds
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "planktivore_productivity",
+  effect = "direct")
+
+#{ pom_nutrients }
+
+m_plank_prod_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_POM + (1|Atoll/Island) + (1|Year), data = uvc_plank_prod_direct, family = Gamma(link = "log"))
+
+summary(m_plank_prod_direct)
+hypothesis(m_plank_prod_direct, "logSeabird_Biomass_density_prop > 0") #0.33
+hypothesis(m_plank_prod_direct, "N15_POM > 0") #0.72
+
+m_plank_prod_direct_b <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_Plankton + N15_Plank_night + (1|Atoll/Island) + (1|Year), data = uvc_plank_prod_direct, family = Gamma(link = "log"))
+
+summary(m_plank_prod_direct_b)
+hypothesis(m_plank_prod_direct_b, "logSeabird_Biomass_density_prop > 0") #0.43
+hypothesis(m_plank_prod_direct_b, "N15_Plankton > 0") #0.77
+hypothesis(m_plank_prod_direct_b, "N15_Plank_night > 0") #0.17
+
+exp(fixef(m_plank_prod_direct))
+
+```
+
+##IV. Detritivores
+
+```{r direct-effect-detritivore}
+
+# 1. baseline formation of the detrital pool
+
+# turf_nutrients -> detritus_nutrients
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients", 
+  outcome = "detritus_nutrients",
+  effect = "direct")
+
+#{ coral_host_nutrients, pom_nutrients } # and the reverse is true so 2 birds 1 stone
+#{ seabirds }
+
+det_n15_dat <- mediators_nutrients %>% filter(Taxon == "Detritus") %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+prior_det <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(2), class = "sd"))
+  
+m_det_n15_turf_direct <- brm(N15 ~ N15_Turf + N15_POM + N15_Coral + (1|Atoll/Island), data = det_n15_dat, prior = prior_det, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_det_n15_turf_direct)
+hypothesis(m_det_n15_turf_direct, "N15_Turf > 0") #0.52
+hypothesis(m_det_n15_turf_direct, "N15_POM > 0") #0.52
+hypothesis(m_det_n15_turf_direct, "N15_Coral > 0") #0.6
+
+#detritus appears to carry both benthic and pelagic isotopic input
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "detritus_nutrients",
+  effect = "direct")
+
+#{ coral_host_nutrients, pom_nutrients, turf_nutrients }
+#{ coral_symbiont_nutrients, pom_nutrients, turf_nutrients }
+
+m_det_n15_turf_sb_direct <- brm(N15 ~ N15_Turf + N15_POM + N15_Coral + log(Seabird_Biomass_density_prop) + (1|Atoll/Island), data = det_n15_dat, prior = prior_det, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_det_n15_turf_sb_direct)
+hypothesis(m_det_n15_turf_sb_direct, "N15_Turf > 0") #0.52
+hypothesis(m_det_n15_turf_sb_direct, "N15_POM > 0") #0.53
+hypothesis(m_det_n15_turf_sb_direct, "N15_Coral > 0") #0.54
+hypothesis(m_det_n15_turf_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.57
+
+#detritus δ15N increases with turf δ15N, but also tracks seabird influence -> seabirds enrich the detrital pool through more than one source pathway
+
+# coral_host_nutrients -> detritus_nutrients
+
+adjustmentSets(dag,
+  exposure = "coral_host_nutrients", 
+  outcome = "detritus_nutrients",
+  effect = "direct")
+
+#{ corallivore_detritus_nutrients, pom_nutrients, turf_nutrients }
+#{ corallivore_detritus_nutrients, pom_nutrients, seabirds }
+#{ corallivore_detritus_nutrients, planktonic_night_nutrients, seabirds }
+
+priors_det_n15 <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(2), class = "sd")
+)
+
+m_det_n15_coral_direct <- brm(N15 ~ N15_Turf + N15_Chaetrif_detritus + N15_POM + N15_Coral + (1|Atoll/Island), prior = priors_det_n15, data = det_n15_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_det_n15_coral_direct)
+hypothesis(m_det_n15_coral_direct, "N15_Coral > 0") #0.6
+hypothesis(m_det_n15_coral_direct, "N15_Turf > 0") #0.51
+hypothesis(m_det_n15_coral_direct, "N15_Chaetrif_detritus > 0") #0.52
+hypothesis(m_det_n15_coral_direct, "N15_POM > 0") #0.53
+
+# corallivore detritus nutrients
+
+adjustmentSets(dag,
+  exposure = "corallivore_detritus_nutrients", 
+  outcome = "detritus_nutrients",
+  effect = "total")
+
+adjustmentSets(dag,
+  exposure = "corallivore_detritus_nutrients", 
+  outcome = "detritus_nutrients",
+  effect = "direct")
+
+# total = direct 
+# { coral_host_nutrients }
+
+m_det_n15_cor_det_direct <- brm(N15 ~ N15_Chaetrif_detritus + N15_Coral + (1|Atoll/Island), data = det_n15_dat, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_det_n15_cor_det_direct)
+hypothesis(m_det_n15_cor_det_direct, "N15_Coral > 0") #0.19
+hypothesis(m_det_n15_cor_det_direct, "N15_Chaetrif_detritus > 0") #0.85
+
+# side test
+
+# coral host -> chaetrif detritus
+
+cor_det_n15_dat <- mediators_nutrients %>% filter(Taxon == "Chaetrif_detritus") %>% 
+  left_join(mediators_nutrients_wide, by = c("Island", "Atoll"))
+
+adjustmentSets(dag,
+  exposure = "coral_host_nutrients", 
+  outcome = "corallivore_detritus_nutrients",
+  effect = "direct")
+
+# total = direct =  {}
+
+m_cor_det_n15 <- brm(N15 ~ N15_Coral + (1|Atoll/Island), data = cor_det_n15_dat, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+summary(m_cor_det_n15)
+hypothesis(m_cor_det_n15, "N15_Coral > 0") #0.97
+
+# seabirds -> chaetrif nutrients
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "corallivore_detritus_nutrients",
+  effect = "total")
+
+# { }
+
+m_cor_det_sb_total <- brm(N15 ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island), data = cor_det_n15_dat, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+hypothesis(m_cor_det_sb_total, "logSeabird_Biomass_density_prop > 0") #0.88
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "corallivore_detritus_nutrients",
+  effect = "direct")
+
+# { coral_host_nutrients }
+
+m_cor_det_sb_direct <- brm(N15 ~ log(Seabird_Biomass_density_prop) + N15_Coral + (1|Atoll/Island), data = cor_det_n15_dat, control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+hypothesis(m_cor_det_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.76
+hypothesis(m_cor_det_sb_direct, "N15_Coral > 0") #0.89
+
+# 2. detrital pathway into downstream consumers
+
+#Wc -> detritivore_productivity
+
+uvc_det_prod_direct <- uvc %>% 
+  filter(Diet == "Detritivore") %>%
+  left_join(wc_dat %>% group_by(Island, Atoll, Transect, Year, Seabird_Biomass_density_prop) %>% 
+              summarize(Wc = mean(Wc, na.rm = T)), 
+            by = c("Island", "Atoll", "Transect", "Seabird_Biomass_density_prop", "Year"))
+
+adjustmentSets(dag,
+  exposure = "detritus_production", 
+  outcome = "detritivore_productivity",
+  effect = "direct")
+
+#total = dirct = { detritus_nutrients }
+
+m_det_prod_wc <- brm(Prod ~ log(Wc) + N15_Detritus + (1|Atoll/Island) + (1|Year), data = uvc_det_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_det_prod_wc)
+hypothesis(m_det_prod_wc, "logWc > 0") #0.99
+hypothesis(m_det_prod_wc, "N15_Detritus > 0") #0.98
+
+# direct effect of seabirds on productivity
+
+adjustmentSets(dag,
+  exposure = "seabirds",
+  outcome = "detritivore_productivity",
+  effect = "direct")
+
+#{ detritus_nutrients, detritus_production }
+
+cor(log(wc_dat$Seabird_Biomass_density_prop),
+  log(wc_dat$Wc),
+  use = "complete.obs") #0.06
+
+cor(log(uvc_det_prod_direct$Wc),
+    log(uvc_det_prod_direct$Prod),
+  use = "complete.obs") #0.28
+
+cor(log(uvc_det_prod_direct$Seabird_Biomass_density_prop),
+  log(uvc_det_prod_direct$Prod),
+  use="complete.obs") #-0.03
+
+cor(mediators_nutrients_wide[,c("N15_POM","N15_Turf","N15_Symbiont")],
+    use="complete.obs") # all 1 so explains weak indiv coefficients
+
+
+m_det_prod_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Wc) + N15_Detritus + (1|Atoll/Island) + (1|Year), data = uvc_det_prod_direct, iter = 4000, warmup = 2000, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_det_prod_direct)
+hypothesis(m_det_prod_direct, "logWc > 0") #0.98
+hypothesis(m_det_prod_direct, "N15_Detritus > 0") #0.79
+hypothesis(m_det_prod_direct, "logSeabird_Biomass_density_prop > 0") #0.55
+
+```
+
+##V: Corallivores
+
+```{r direct effect-coral}
+
+# 1. formation of coral isotope pathway
+
+# data
+
+host_symbiont_dat <- read.csv("data/CHA18_paired_host_symbiont.csv") %>% 
+  filter(Host_sample_ID != "") %>% 
+  left_join(mediators_nutrients_wide %>% select(N15_POM, N15_Plank_night, Island, Atoll), by = c("Island", "Atoll")) %>% 
+  left_join(sb_data, by = c("Island", "Atoll"))
+
+prior_coral <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(2), class = "sd"))
+
+
+# 1.a. coral symbionts
+
+# seabirds -> coral symbionts
+
+# already done - see above
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "coral_symbiont_nutrients",
+  effect = "direct")
+
+# {}
+
+# coral symbionts -> coral host
+
+# total
+
+m_host_n15_symbiont_total <- brm(Host_N15 ~ Symbiont_N15 + (1|Atoll/Island) + (1|Year), data = host_symbiont_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_symbiont_total)
+hypothesis(m_host_n15_symbiont_total, "Symbiont_N15 > 0") #1
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "coral_symbiont_nutrients", 
+  outcome = "coral_host_nutrients",
+  effect = "total")
+
+#{ seabirds }
+
+
+m_host_n15_direct <- brm(Host_N15 ~ log(Seabird_Biomass_density_prop) + Symbiont_N15 + (1|Atoll/Island) + (1|Year), data = host_symbiont_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_direct)
+hypothesis(m_host_n15_direct, "Symbiont_N15 > 0") #1
+hypothesis(m_host_n15_direct, "logSeabird_Biomass_density_prop > 0") #0.94
+
+# seabirds -> coral host = direct uptake of dissolved nitrogen
+
+#total
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "coral_host_nutrients",
+  effect = "total")
+
+m_host_n15_sb_total <- brm(Host_N15 ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year), data = host_symbiont_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_sb_total)
+hypothesis(m_host_n15_sb_total, "logSeabird_Biomass_density_prop > 0") #0.92
+
+#direct
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "coral_host_nutrients",
+  effect = "direct")
+
+#{ coral_symbiont_nutrients, pom_nutrients }
+#{ coral_symbiont_nutrients, planktonic_night_nutrients }
+
+m_host_n15_sb_direct <- brm(Host_N15 ~ log(Seabird_Biomass_density_prop) + N15_POM + Symbiont_N15 + (1|Atoll/Island) + (1|Year), prior = prior_coral, data = host_symbiont_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_sb_direct)
+hypothesis(m_host_n15_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.92
+hypothesis(m_host_n15_sb_direct, "N15_POM > 0") #0.6
+hypothesis(m_host_n15_sb_direct, "Symbiont_N15 > 0") #0.94
+
+m_host_n15_sb_direct_b <- brm(Host_N15 ~ log(Seabird_Biomass_density_prop) + N15_Plank_night + Symbiont_N15 + (1|Atoll/Island) + (1|Year), prior = prior_coral, data = host_symbiont_dat, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_sb_direct_b)
+hypothesis(m_host_n15_sb_direct_b, "logSeabird_Biomass_density_prop > 0") #0.71
+hypothesis(m_host_n15_sb_direct_b, "N15_Plank_night > 0") #0.46
+hypothesis(m_host_n15_sb_direct_b, "Symbiont_N15 > 0") #0.99
+
+# so it really is through symbiont-mediated transfer and not heterotrophic feeding
+
+# planktonic_night_nutrients -> coral host nutrients
+
+# total = direct
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "coral_host_nutrients",
+  effect = "direct")
+
+prior_host <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(2), class = "sd"))
+
+#{ coral_symbiont_nutrients }
+#{ seabirds }
+#{ pom_nutrients }
+
+m_host_n15_plank_night_direct <- brm(Host_N15 ~ N15_POM + N15_Plank_night + (1|Atoll/Island) + (1|Year), data = host_symbiont_dat, prior = prior_host, control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_host_n15_plank_night_direct)
+hypothesis(m_host_n15_plank_night_direct, "N15_Plank_night > 0") #0.81
+
+#heterotrophic feeding on night plankton
+
+
+
+# 2. Coral performance/growth (production)
+
+# coral symbiont nutrients -> coral growth
+# see m_growth_symbiont_direct and m_growth_symbiont_total
+
+# night plankton -> coral growth
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "coral_growth",
+  effect = "total")
+
+# { coral_symbiont_nutrients }
+#{ seabirds }
+#{ pom_nutrients }
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "coral_growth",
+  effect = "direct")
+
+#can't do
+
+# seabirds -> coral growth
+
+# Already calculated
+
+# total
+
+summary(m_growth_sb_total)
+hypothesis(m_growth_sb_total, "logSeabird_Biomass_density_prop > 0") #0.68
+
+# direct
+
+summary(m_growth_sb_direct)
+hypothesis(m_growth_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.34
+hypothesis(m_growth_sb_direct, "Symbiont_N15 > 0") #0.79
+hypothesis(m_growth_sb_direct, "N15_Plank_night > 0") #0.72
+
+
+# 3. Coral-to-corallivore transfer
+
+# data
+
+uvc_cor_prod <- uvc %>% 
+  filter(Diet == "Corallivore") %>%
+  left_join(coral_growth_dat %>% group_by(Island, Atoll, Seabird_Biomass_density_prop) %>% 
+              summarize(Growth = mean(Growth, na.rm = T)), 
+             by = c("Island", "Atoll", "Seabird_Biomass_density_prop"))
+
+# coral_host_nutrients -> corallivore_productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "coral_host_nutrients", 
+  outcome = "corallivore_productivity",
+  effect = "total")
+
+#{ coral_symbiont_nutrients, planktonic_night_nutrients }
+
+m_cor_prod_host_total <- brm(Prod ~ N15_Coral + N15_Plank_night + N15_Symbiont + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_host_total)
+hypothesis(m_cor_prod_host_total, "N15_Coral > 0") #0.76
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "coral_host_nutrients", 
+  outcome = "corallivore_productivity",
+  effect = "direct")
+
+#{ coral_growth }
+#{ coral_symbiont_nutrients }
+
+m_cor_prod_host_direct <- brm(Prod ~ N15_Coral + log(Growth) + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_host_direct)
+hypothesis(m_cor_prod_host_direct, "N15_Coral > 0") #0.82
+hypothesis(m_cor_prod_host_direct, "logGrowth > 0") #0.22
+
+m_cor_prod_host_direct_b <- brm(Prod ~ N15_Coral + N15_Symbiont + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_host_direct_b)
+hypothesis(m_cor_prod_host_direct_b, "N15_Coral > 0") #0.68
+hypothesis(m_cor_prod_host_direct_b, "N15_Symbiont > 0") #0.42
+
+# coral growth -> corallivore_productivity
+
+# total
+
+m_cor_prod_growth_total <- brm(Prod ~ log(Growth) + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_growth_total)
+hypothesis(m_cor_prod_growth_total, "logGrowth > 0") #0.4
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "coral_growth", 
+  outcome = "corallivore_productivity",
+  effect = "direct")
+
+#{ coral_host_nutrients }
+
+# fitted before
+
+#4. Total and direct sb effects
+
+# total
+
+m_cor_prod_sb_total <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_sb_total)
+hypothesis(m_cor_prod_sb_total, "logSeabird_Biomass_density_prop > 0")
+
+# direct
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "corallivore_productivity",
+  effect = "direct")
+
+#{ coral_growth, coral_host_nutrients }
+
+m_cor_prod_sb_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Growth) + N15_Coral + (1|Atoll/Island) + (1|Year), data = uvc_cor_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_cor_prod_sb_direct)
+hypothesis(m_cor_prod_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.05
+hypothesis(m_cor_prod_sb_direct, "logGrowth > 0") #0.13
+hypothesis(m_cor_prod_sb_direct, "N15_Coral > 0") #0.94
+
+```
+
+##VI. Omnivores 
+
+```{r direct effect-omni}
+
+# omnivores also include mostly carnivorous fishes that also have limited reliance on plankton-derived nutrients (eg triggerfish and wrasses (R. rectangulus and Thalassoma) but small portion tho (~10%) so no plankton_prod -> omnivore_prod arrow in the DAG
+
+# data
+
+uvc_omni_prod <- uvc %>% 
+  filter(Diet == "Omnivore") %>%
+  left_join(wc_dat %>% group_by(Island, Atoll, Transect, Year, Seabird_Biomass_density_prop) %>% 
+              summarize(Wc = mean(Wc, na.rm = T)), 
+            by = c("Island", "Atoll", "Transect", "Seabird_Biomass_density_prop", "Year")) %>% 
+  left_join(outcomes_uvc_wide, by = c("Island", "Atoll", "Year", "Transect"))
+
+# 1. detritus production -> omnivore productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "detritus_production", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+# can't test direct
+
+#{ herbivore_productivity, planktivore_productivity }
+
+m_omni_prod_wc_direct <- brm(Prod ~ log(Wc) + log(Prod_Herbivore) + log(Prod_Planktivore) + (1|Atoll/Island) + (1|Year), data = uvc_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_omni_prod_wc_direct)
+hypothesis(m_omni_prod_wc_direct, "logWc > 0") #0.75
+hypothesis(m_omni_prod_wc_direct, "logProd_Herbivore > 0")#0.48
+hypothesis(m_omni_prod_wc_direct, "logProd_Planktivore > 0") #0.02
+
+# 2. cryptic prey pathways
+
+# crypto_inv_productivity -> omnivore_productivity
+
+adjustmentSets(dag,
+  exposure = "crypto_inv_productivity", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+# can't estimate
+
+# 3. turf pathway
+
+# turf nutrients -> omnivore_productivity
+
+adjustmentSets(dag,
+  exposure = "turf_nutrients", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+#{ coral_host_nutrients, planktonic_night_nutrients, pom_nutrients }
+#{ coral_symbiont_nutrients, pom_nutrients }
+#{ seabirds }
+
+prior_omni_prod <- c(
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd"),
+  prior(exponential(1), class = "shape"))
+
+m_omni_prod_turf_total <- brm(Prod ~ N15_Turf + N15_Symbiont + N15_POM + (1|Atoll/Island) + (1|Year), prior = prior_omni_prod, data = uvc_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_omni_prod_turf_total)
+hypothesis(m_omni_prod_turf_total, "N15_Turf > 0") #0.5
+hypothesis(m_omni_prod_turf_total, "N15_Symbiont > 0") #0.48
+hypothesis(m_omni_prod_turf_total, "N15_POM > 0") #0.49
+
+adjustmentSets(dag,
+  exposure = "planktonic_day_nutrients", 
+  outcome = "omnivore_productivity",
+  effect = "direct")
+
+# can't test
+
+adjustmentSets(dag,
+  exposure = "detritus_nutrients", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+#{ planktonic_day_nutrients, planktonic_night_nutrients, turf_nutrients }
+
+m_omni_prod_det_total <- brm(Prod ~ N15_Detritus + N15_Turf + N15_Plankton + N15_Plank_night + (1|Atoll/Island) + (1|Year), prior = prior_omni_prod, data = uvc_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_omni_prod_det_total)
+hypothesis(m_omni_prod_det_total, "N15_Detritus > 0") #0.25
+hypothesis(m_omni_prod_det_total, "N15_Turf > 0") #0.42
+hypothesis(m_omni_prod_det_total, "N15_Plankton > 0") #0.5
+hypothesis(m_omni_prod_det_total, "N15_Plank_night > 0") #0.77
+
+#{ coral_host_nutrients, pom_nutrients, turf_nutrients }
+
+adjustmentSets(dag,
+  exposure = "planktonic_night_nutrients", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+#{ pom_nutrients }
+
+m_omni_prod_plank_night_total <- brm(Prod ~ N15_POM + N15_Plank_night + (1|Atoll/Island) + (1|Year), prior = prior_omni_prod, data = uvc_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+hypothesis(m_omni_prod_plank_night_total, "N15_Plank_night > 0") #0.48
+
+adjustmentSets(dag,
+  exposure = "planktonic_day_nutrients", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+#{ pom_nutrients }
+
+m_omni_prod_plank_day_total <- brm(Prod ~ N15_POM + N15_Plankton + (1|Atoll/Island) + (1|Year), data = uvc_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+hypothesis(m_omni_prod_plank_day_total, "N15_Plankton > 0") #0.55
+
+# 4. total and direct sb effect
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "omnivore_productivity",
+  effect = "total")
+
+# {}
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "omnivore_productivity",
+  effect = "direct")
+
+#{ detritus_nutrients, planktonic_day_nutrients, planktonic_night_nutrients, turf_nutrients }
+#{ detritus_nutrients, planktonic_night_nutrients, pom_nutrients, turf_nutrients }
+#{ coral_host_nutrients, planktonic_night_nutrients, pom_nutrients, turf_nutrients }
+#{ coral_symbiont_nutrients, pom_nutrients, turf_nutrients }
+
+m_omni_prod_sb_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + N15_Detritus + N15_Plank_night + N15_Plankton + N15_Turf + (1|Atoll/Island) + (1|Year), data = uvc_omni_prod, prior = prior_omni_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_omni_prod_sb_direct)
+hypothesis(m_omni_prod_sb_direct, "N15_Detritus > 0") #0.49
+hypothesis(m_omni_prod_sb_direct, "N15_Turf > 0") #0.52
+hypothesis(m_omni_prod_sb_direct, "N15_Plank_night > 0") #0.77
+hypothesis(m_omni_prod_sb_direct, "N15_Plankton > 0") #0.6
+hypothesis(m_omni_prod_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.23
+
+```
+
+##VII. Carnivores 
+
+```{r direct effect-carn}
+
+# data
+
+uvc_carn_prod <- uvc %>% 
+  filter(Diet == "Carnivore") 
+
+# 1. crypto_fish_productivity -> carnivore_productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "crypto_fish_productivity", 
+  outcome = "carnivore_productivity",
+  effect = "direct")
+
+#{ crypto_inv_productivity }
+
+m_carn_prod_fish_prod_total <- brm(Prod ~ log(Prod_Crypto_fish) + log(Prod_Crypto_inv) + (1|Atoll/Island) + (1|Year), data = uvc_carn_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_carn_prod_fish_prod_total)
+hypothesis(m_carn_prod_fish_prod_total, "logProd_Crypto_fish > 0") #0.94
+hypothesis(m_carn_prod_fish_prod_total, "logProd_Crypto_inv > 0") #0.53
+
+# direct = total
+
+adjustmentSets(dag,
+  exposure = "crypto_inv_productivity", 
+  outcome = "carnivore_productivity",
+  effect = "direct")
+
+# 3. total and direct sb effect
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "carnivore_productivity",
+  effect = "direct")
+
+#{ crypto_fish_productivity, crypto_inv_productivity }
+
+m_carn_prod_sb_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Prod_Crypto_fish) + log(Prod_Crypto_inv) +  (1|Atoll/Island) + (1|Year), data = uvc_carn_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_carn_prod_sb_direct)
+hypothesis(m_carn_prod_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.33
+hypothesis(m_carn_prod_sb_direct, "logProd_Crypto_fish > 0") #0.87
+hypothesis(m_carn_prod_sb_direct, "logProd_Crypto_inv > 0") #0.4
+
+```
+
+##VIII. Invertivores
+
+```{r direct effect-inv}
+
+# data
+
+uvc_inv_prod <- uvc %>% 
+  filter(Diet == "Invertivore")
+
+# 1. crypto_inv_productivity -> invertivore_productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "crypto_inv_productivity", 
+  outcome = "invertivore_productivity",
+  effect = "direct")
+
+#{ }
+
+# direct = total
+
+m_inv_prod_inv_total <- brm(Prod ~ log(Prod_Crypto_inv) + (1|Atoll/Island) + (1|Year), data = uvc_inv_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_inv_prod_inv_total)
+hypothesis(m_inv_prod_inv_total, "logProd_Crypto_inv > 0") #0.42
+
+# 2. total and direct sb effect
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "invertivore_productivity",
+  effect = "direct")
+
+#{ crypto_inv_productivity }
+
+m_inv_prod_inv_sb_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Prod_Crypto_inv) + (1|Atoll/Island) + (1|Year), data = uvc_inv_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_inv_prod_inv_sb_direct)
+hypothesis(m_inv_prod_inv_sb_direct, "logProd_Crypto_inv > 0") #0.43
+hypothesis(m_inv_prod_inv_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.46
+
+adjustmentSets(dag,
+  exposure = "inv_crypto_fish_productivity", 
+  outcome = "invertivore_productivity",
+  effect = "total")
+
+m_inv_prod_inv_crypto_fish_prod_total <- brm(Prod ~ log(Prod_Inv_crypto_fish) + (1|Atoll/Island) + (1|Year), data = uvc_inv_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+hypothesis(m_inv_prod_inv_crypto_fish_prod_total, "logProd_Inv_crypto_fish > 0") #0.16
+
+m_inv_prod_inv_crypto_fish_prod_direct <- brm(Prod ~ log(Prod_Inv_crypto_fish) + log(Prod_Crypto_inv) + (1|Atoll/Island) + (1|Year), data = uvc_inv_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+hypothesis(m_inv_prod_inv_crypto_fish_prod_direct, "logProd_Inv_crypto_fish > 0") #0.18
+hypothesis(m_inv_prod_inv_crypto_fish_prod_direct, "logProd_Crypto_inv > 0") #0.41
+```
+
+##IX. Piscivores 
+
+```{r direct effect-pisc}
+
+# data
+
+uvc_pisc_prod <- uvc %>% 
+  filter(Diet == "Piscivore") %>% 
+  left_join(outcomes_uvc_wide, by = c("Atoll", "Island", "Year", "Transect"))
+
+# 1. crypto_fish_productivity -> carnivore_productivity
+
+# total
+
+adjustmentSets(dag,
+  exposure = "crypto_fish_productivity", 
+  outcome = "piscivore_productivity",
+  effect = "direct")
+
+#total = direct
+#{ planktivore_productivity }
+
+m_pisc_prod_fish_prod_total <- brm(Prod ~ log(Prod_Crypto_fish) + log(Prod_Planktivore) + (1|Atoll/Island) + (1|Year), data = uvc_pisc_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_pisc_prod_fish_prod_total)
+hypothesis(m_pisc_prod_fish_prod_total, "logProd_Crypto_fish > 0") #0.84
+hypothesis(m_pisc_prod_fish_prod_total, "logProd_Planktivore > 0") #0.37
+
+draws_m_pisc_prod_fish_prod_total <- spread_draws(m_pisc_prod_fish_prod_total, b_logProd_Crypto_fish)
+doubling_effect_m_pisc_prod_fish_prod_total <- draws_m_pisc_prod_fish_prod_total %>%
+  mutate(effect_doubling = exp(b_logProd_Crypto_fish * log(2)))
+median(doubling_effect_m_pisc_prod_fish_prod_total$effect_doubling)
+hdi(doubling_effect_m_pisc_prod_fish_prod_total$effect_doubling, ci = 0.95)
+mean(doubling_effect_m_pisc_prod_fish_prod_total$effect_doubling > 1)
+
+# 2. total and direct sb effect
+
+adjustmentSets(dag,
+  exposure = "seabirds", 
+  outcome = "piscivore_productivity",
+  effect = "direct")
+
+#{ crypto_fish_productivity, planktivore_productivity }
+
+m_pisc_prod_sb_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Prod_Crypto_fish) + log(Prod_Planktivore) + (1|Atoll/Island) + (1|Year), data = uvc_pisc_prod, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+
+summary(m_pisc_prod_sb_direct)
+hypothesis(m_pisc_prod_sb_direct, "logSeabird_Biomass_density_prop > 0") #0.9
+hypothesis(m_pisc_prod_sb_direct, "logProd_Crypto_fish > 0") #0.55
+hypothesis(m_pisc_prod_sb_direct, "logProd_Planktivore > 0") #0.23
+
+```
+# Inset plots
+
+```{r plot-fig2}
+
+plot.m_symbiont_n15 <- spread_draws(m_symbiont_n15, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+plot.m_symbiont_n15
+
+#ggsave("figures/cor_a.png", plot.m_symbiont_n15, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_symbiont_n15, b_logSeabird_Biomass_density_prop)
+xlims <- quantile(draws$b_logSeabird_Biomass_density_prop, probs = c(0.001, 0.999))
+
+plot.m_pom_n15 <- draws %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/cor_b.png", plot.m_pom_n15, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_growth_symbiont_direct, b_Symbiont_N15)
+xlims <- quantile(draws$b_Symbiont_N15, probs = c(0.01, 0.99))
+
+plot.m_growth_symbiont_direct_Symbiont <- draws %>%
+  ggplot(aes(y = 0, x = b_Symbiont_N15, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/cor_c.png", plot.m_growth_symbiont_direct_Symbiont, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_plank_night_pom, b_N15_POM)
+xlims <- quantile(draws$b_N15_POM, probs = c(0.02, 0.98))
+
+plot.m_plank_night_pom <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_POM, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6, adjust = 2) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+plot.m_plank_night_pom
+
+#ggsave("figures/cor_d.png", plot.m_plank_night_pom, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_host_n15_direct <- spread_draws(m_host_n15_direct, b_Symbiont_N15) %>%
+  ggplot(aes(y = 0, x = b_Symbiont_N15, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+plot.m_host_n15_direct
+
+#ggsave("figures/cor_e.png", plot.m_host_n15_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_host_n15_plank_night_direct <- spread_draws(m_host_n15_plank_night_direct, b_N15_Plank_night) %>%
+  ggplot(aes(y = 0, x = b_N15_Plank_night, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/cor_f.png", plot.m_host_n15_plank_night_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_cor_prod_host_direct, b_logGrowth)
+xlims <- quantile(draws$b_logGrowth, probs = c(0.01, 0.99))
+
+plot.m_cor_prod_host_direct_Growth <- draws %>%
+  ggplot(aes(y = 0, x = b_logGrowth, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+m_cor_prod_host_direct
+
+#ggsave("figures/cor_g.png", plot.m_cor_prod_host_direct_Growth, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_cor_prod_host_direct, b_N15_Coral)
+xlims <- quantile(draws$b_N15_Coral, probs = c(0.01, 0.99))
+
+plot.m_cor_prod_host_direct_N15 <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_Coral, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/cor_h.png", plot.m_cor_prod_host_direct_N15, width = 1.5, height = 1, units = "in", dpi = 600)
+
+
+draws <- spread_draws(m_growth_symbiont_direct, b_N15_Plank_night)
+xlims <- quantile(draws$b_N15_Plank_night, probs = c(0.01, 0.99))
+
+plot.m_growth_plank_night <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_Plank_night, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/cor_i.png", plot.m_growth_plank_night, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_growth_symbiont_direct, b_Host_N15)
+xlims <- quantile(draws$b_Host_N15, probs = c(0.01, 0.99))
+
+plot.m_growth_symbiont_direct_Host <- draws %>%
+  ggplot(aes(y = 0, x = b_Host_N15, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/cor_j.png", plot.m_growth_symbiont_direct_Host, width = 1.5, height = 1, units = "in", dpi = 600)
+
+```
+
+```{r plot-figs4}
+
+draws <- spread_draws(m_turf_n15, b_logSeabird_Biomass_density_prop)
+xlims <- quantile(draws$b_logSeabird_Biomass_density_prop, probs = c(0.01, 0.99))
+
+plot.m_turf_n15 <- draws %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/det_b.png", plot.m_turf_n15, width = 1.5, height = 1, units = "in", dpi = 600) #there was no a in the template
+
+
+draws <- spread_draws(m_cor_det_n15, b_N15_Coral)
+xlims <- quantile(draws$b_N15_Coral, probs = c(0.015, 0.985))
+
+plot.m_cor_det_n15 <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_Coral, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/det_c.png", plot.m_cor_det_n15, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_det_n15_coral_direct <- spread_draws(m_det_n15_coral_direct, b_N15_Coral) %>%
+  ggplot(aes(y = 0, x = b_N15_Coral, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/det_d.png", plot.m_det_n15_coral_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_det_n15_turf_direct <- spread_draws(m_det_n15_turf_direct, b_N15_Turf) %>%
+  ggplot(aes(y = 0, x = b_N15_Turf, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/det_e.png", plot.m_det_n15_turf_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_det_n15_pom_direct <- spread_draws(m_det_n15_turf_direct, b_N15_POM) %>%
+  ggplot(aes(y = 0, x = b_N15_POM, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/det_f.png", plot.m_det_n15_pom_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_det_n15_cor_det_direct, b_N15_Chaetrif_detritus)
+xlims <- quantile(draws$b_N15_Chaetrif_detritus, probs = c(0.025, 0.975))
+
+plot.m_det_n15_cor_det_direct <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_Chaetrif_detritus, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/det_g.png", plot.m_det_n15_cor_det_direct, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_det_prod_wc, b_N15_Detritus)
+xlims <- quantile(draws$b_N15_Detritus, probs = c(0.025, 0.975))
+
+plot.m_det_prod_wc <- draws %>%
+  ggplot(aes(y = 0, x = b_N15_Detritus, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/det_h.png", plot.m_det_prod_wc, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_det_prod_wc_i <- spread_draws(m_det_prod_wc, b_logWc) %>%
+  ggplot(aes(y = 0, x = b_logWc, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/det_i.png", plot.m_det_prod_wc_i, width = 1.5, height = 1, units = "in", dpi = 600)
+
+```
+
+```{r plot-figs5}
+
+plot.m_crypto_inv_prod_inv_crypto_fish_site <- spread_draws(m_crypto_inv_prod_inv_crypto_fish_site, b_logProd_Inv_crypto_fish) %>%
+  ggplot(aes(y = 0, x = b_logProd_Inv_crypto_fish, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/carn_a.png", plot.m_crypto_inv_prod_inv_crypto_fish_site, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_carn_prod_fish_prod_total, b_logProd_Crypto_inv)
+xlims <- quantile(draws$b_logProd_Crypto_inv, probs = c(0.01, 0.99))
+
+plot.m_carn_prod_fish_prod_total_b <- draws %>%
+  ggplot(aes(y = 0, x = b_logProd_Crypto_inv, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/carn_b.png", plot.m_carn_prod_fish_prod_total_b, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_carn_prod_fish_prod_total, b_logProd_Crypto_fish)
+xlims <- quantile(draws$b_logProd_Crypto_fish, probs = c(0.01, 0.99))
+
+plot.m_carn_prod_fish_prod_total <- draws %>%
+  ggplot(aes(y = 0, x = b_logProd_Crypto_fish, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+plot.m_carn_prod_fish_prod_total
+
+#ggsave("figures/carn_c.png", plot.m_carn_prod_fish_prod_total, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_inv_prod_inv_total, b_logProd_Crypto_inv)
+xlims <- quantile(draws$b_logProd_Crypto_inv, probs = c(0.01, 0.99))
+
+plot.m_inv_prod_inv_total <- draws %>%
+  ggplot(aes(y = 0, x = b_logProd_Crypto_inv, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/carn_d.png", plot.m_inv_prod_inv_total, width = 1.5, height = 1, units = "in", dpi = 600)
+
+draws <- spread_draws(m_pisc_prod_fish_prod_total, b_logProd_Crypto_fish)
+xlims <- quantile(draws$b_logProd_Crypto_fish, probs = c(0.01, 0.99))
+
+plot.m_pisc_prod_fish_prod_total <- draws %>%
+  ggplot(aes(y = 0, x = b_logProd_Crypto_fish, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(xlim = xlims, clip = "off")
+
+#ggsave("figures/carn_e.png", plot.m_pisc_prod_fish_prod_total, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_pisc_prod_fish_prod_total_f <- spread_draws(m_pisc_prod_fish_prod_total, b_logProd_Planktivore) %>%
+  ggplot(aes(y = 0, x = b_logProd_Planktivore, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6, adjust = 2) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/carn_f.png", plot.m_pisc_prod_fish_prod_total_f, width = 1.5, height = 1, units = "in", dpi = 600)
+
+plot.m_crypto_inv_prod_sb_total_site <- spread_draws(m_crypto_inv_prod_sb_total_site, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/carn_g.png", plot.m_crypto_inv_prod_sb_total_site, width = 2, height = 1, units = "in", dpi = 600)
+
+plot.m_crypto_fish_prod_sb_total_site <- spread_draws(m_crypto_fish_prod_sb_total_site, b_logSeabird_Biomass_density_prop) %>%
+  ggplot(aes(y = 0, x = b_logSeabird_Biomass_density_prop, fill = after_stat(x > 0))) +
+  stat_halfeye(point_interval = median_hdci, .width = c(.95, .5), fatten_point = 1, slab_alpha = 0.6) +
+  scale_fill_manual(values = c("#e89c81", "#d0e2af")) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme(axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "none") + 
+  coord_cartesian(clip = "off")
+
+#ggsave("figures/carn_h.png", plot.m_crypto_fish_prod_sb_total_site, width = 2, height = 1, units = "in", dpi = 600)
+
+```
+

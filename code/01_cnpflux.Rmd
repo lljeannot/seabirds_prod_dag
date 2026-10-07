@@ -1,0 +1,387 @@
+---
+title: "01_cnpflux"
+output: html_document
+date: "2026-10-07"
+---
+
+```{r setup, include=FALSE}
+#use same packages as original plus
+
+#https://repository.kaust.edu.sa/server/api/core/bitstreams/cdc13e75-684a-471f-aee2-c2d9035ec9a8/content
+
+library(fishtree)
+library(ape)
+library(Rphylopars)
+```
+
+
+```{r cnp}
+
+# Imputation of Qx can be done exactly like Nina's paper. Less so for imputation of Dx
+
+og_spp <- read.csv("data/UVC_param.csv") %>% 
+  rename(Species = species) %>% 
+  select(Species, Qn_m, Qn_sd, Qc_m, Qc_sd, Qp_m, Qp_sd)
+
+all_spp <- read.csv("data/CHA23_UVC_data.csv") %>% # replace with fish tree of life-adapted names
+  mutate(Species = ifelse(Species == "Plectroglyphidodon gascoynei", "Stegastes gascoynei", Species),
+         Species = ifelse(Species == "Plectroglyphidodon fasciolatus", "Stegastes fasciolatus", Species),
+         Species = ifelse(Species == "Ferdauia ferdau", "Carangoides ferdau", Species),
+         Species = ifelse(Species == "Ferdauia orthogrammus", "Carangoides orthogrammus", Species)) %>% 
+  filter(!(Species %in% c("Carcharhinus melanopterus", "Triaenodon obesus"))) %>% # not in fish tree of life. I think defensible to not have them as hugely mobile so unlikely to represent local inputs
+  distinct(Species) %>% 
+  mutate(Species = gsub(" ", "_", Species)) %>% #so they nmatch N schiett df
+  full_join(og_spp) %>% 
+  distinct(Species)
+
+tree <- fishtree_complete_phylogeny(species = all_spp$Species)
+
+# for each tree, compute phylogenetic crrelation matrix and average elemtn-wise across the 100 matrices
+
+# get variance-covariance matrix from ape::vcv(), convert to correlation with cov2cor()
+
+tip_sets <- lapply(tree, \(tr) tr$tip.label)
+tips_all <- Reduce(intersect, tip_sets)
+tips_order <- sort(tips_all)
+
+length(tips_all)
+trees100_pruned <- lapply(tree, \(tr) keep.tip(tr, tips_all))
+
+cors <- lapply(trees100_pruned, function(tr) {
+   V <- vcv(tr, corr = FALSE)  # covariance among tips
+   cov2cor(V)                 # correlation matrix
+ })
+
+Cbar <- Reduce(`+`, cors) / length(cors)
+diag(Cbar) <- 1
+
+# imputation - body stoichiometry
+
+# first import dataset with known CNP values
+
+test <- read.csv("data/UVC_param.csv")
+
+bodycnp <- read.csv("data/UVC_param.csv") %>% 
+  select(species, Qc = Qc_m, Qn = Qn_m, Qp = Qp_m)
+
+to_predict <- setdiff(tips_order, bodycnp$species)
+
+trait_data <- bind_rows(
+  bodycnp,
+  tibble(species = to_predict,
+         Qc = NA_real_,
+         Qn = NA_real_,
+         Qp = NA_real_))
+
+#this takes ~ 20 min
+#fits <- lapply(trees100_pruned, function(tr) {
+#  phylopars(
+#    trait_data = trait_data,
+#    tree       = tree, #double check what is tr
+#    model      = "BM"
+#  )
+#})
+
+#save(fits, file = "data/Qx_fits.Rdata")
+
+load("data/Qx_fits.Rdata")
+
+q_per_tree <- lapply(fits, function(fit) {
+  M <- fit$anc_recon
+  M[to_predict, c("Qc", "Qn", "Qp"), drop = FALSE]})
+
+q_long <- bind_rows(lapply(seq_along(q_per_tree), function(i) {
+  as.data.frame(q_per_tree[[i]]) %>%
+    mutate(species = rownames(q_per_tree[[i]]),
+           tree_id = i)}))
+
+Q_summary <- q_long %>%
+  group_by(species) %>%
+  summarise(
+    Qc_m  = mean(Qc, na.rm = TRUE),
+    Qc_sd = sd(Qc,  na.rm = TRUE),
+    Qn_m  = mean(Qn, na.rm = TRUE),
+    Qn_sd = sd(Qn,  na.rm = TRUE),
+    Qp_m  = mean(Qp, na.rm = TRUE),
+    Qp_sd = sd(Qp,  na.rm = TRUE),
+    .groups = "drop")
+
+bodycnp_most <- read.csv("data/CHA23_UVC_data.csv") %>% # replace with fish tree of life-adapted names
+  mutate(Species = ifelse(Species == "Plectroglyphidodon gascoynei", "Stegastes gascoynei", Species),
+         Species = ifelse(Species == "Plectroglyphidodon fasciolatus", "Stegastes fasciolatus", Species),
+         Species = ifelse(Species == "Ferdauia ferdau", "Carangoides ferdau", Species),
+         Species = ifelse(Species == "Ferdauia orthogrammus", "Carangoides orthogrammus", Species)) %>% 
+  filter(!(Species %in% c("Carcharhinus melanopterus", "Triaenodon obesus"))) %>% 
+  distinct(Species) %>% 
+  mutate(Species = gsub(" ", "_", Species)) %>% 
+  left_join(og_spp) %>%
+  rename(species = Species) %>% 
+  filter(!is.na(Qn_m))
+
+bodycnp_all <- bodycnp_most %>% 
+  bind_rows(Q_summary)  
+
+bodycnp_all <- bodycnp_all %>% 
+  bind_rows(bodycnp_all %>%
+      filter(species == "Dascyllus_aruanus") %>%
+      mutate(species = "Dascyllus_sp"))
+
+# Now Dx
+
+# Imputation from trophic group
+
+# Extract trophic group means (trophic group by our classification)
+
+dietcnp_dat <- read.csv("data/CHA23_UVC_data.csv") %>% # replace with fish tree of life-adapted names - for consistency
+  mutate(Species = ifelse(Species == "Plectroglyphidodon gascoynei", "Stegastes gascoynei", Species),
+         Species = ifelse(Species == "Plectroglyphidodon fasciolatus", "Stegastes fasciolatus", Species),
+         Species = ifelse(Species == "Ferdauia ferdau", "Carangoides ferdau", Species),
+         Species = ifelse(Species == "Ferdauia orthogrammus", "Carangoides orthogrammus", Species)) %>% 
+  filter(!(Species %in% c("Carcharhinus melanopterus", "Triaenodon obesus"))) %>% 
+  mutate(Species = gsub(" ", "_", Species)) %>% 
+  distinct(Species, Family, Diet) %>% 
+  group_by(Species) %>% 
+  rename(species = Species)
+
+dietcnp_fam_estimates <- read.csv("data/UVC_param.csv") %>% 
+  select(species, Dc_m, Dn_m, Dp_m, Dc_sd, Dn_sd, Dp_sd) %>% 
+  left_join(dietcnp_dat, by = "species") %>% 
+  filter(!is.na(Diet)) %>% 
+  group_by(Family, Diet) %>% 
+  summarise(Dc_m = mean(Dc_m, na.rm = T),
+         Dc_sd = sqrt(coalesce(var(Dc_m, na.rm = TRUE), 0) + mean(Dc_sd^2, na.rm = TRUE)),
+         Dn_m = mean(Dn_m, na.rm = T),
+         Dn_sd = sqrt(coalesce(var(Dn_m, na.rm = TRUE), 0) + mean(Dn_sd^2, na.rm = TRUE)),
+         Dp_m = mean(Dp_m, na.rm = T),
+         Dp_sd = sqrt(coalesce(var(Dp_m, na.rm = TRUE), 0) + mean(Dp_sd^2, na.rm = TRUE))) %>% 
+  distinct(Family, Diet, Dn_m, Dn_sd, Dc_m, Dc_sd, Dp_m, Dp_sd)
+
+dietcnp_diet_estimates <- read.csv("data/UVC_param.csv") %>% 
+  select(species, Dc_m, Dn_m, Dp_m, Dc_sd, Dn_sd, Dp_sd) %>% 
+  left_join(dietcnp_dat, by = "species") %>% 
+  filter(!is.na(Diet)) %>% 
+  group_by(Diet) %>% 
+  summarise(Dc_m = mean(Dc_m, na.rm = T),
+         Dc_sd = sqrt(coalesce(var(Dc_m, na.rm = TRUE), 0) + mean(Dc_sd^2, na.rm = TRUE)),
+         Dn_m = mean(Dn_m, na.rm = T),
+         Dn_sd = sqrt(coalesce(var(Dn_m, na.rm = TRUE), 0) + mean(Dn_sd^2, na.rm = TRUE)),
+         Dp_m = mean(Dp_m, na.rm = T),
+         Dp_sd = sqrt(coalesce(var(Dp_m, na.rm = TRUE), 0) + mean(Dp_sd^2, na.rm = TRUE))) %>% 
+  distinct(Diet, Dn_m, Dn_sd, Dc_m, Dc_sd, Dp_m, Dp_sd)
+
+dietcnp_fam <- read.csv("data/CHA23_UVC_data.csv") %>% # replace with fish tree of life-adapted names - this time just for consistency
+  mutate(Species = ifelse(Species == "Plectroglyphidodon gascoynei", "Stegastes gascoynei", Species),
+         Species = ifelse(Species == "Plectroglyphidodon fasciolatus", "Stegastes fasciolatus", Species),
+         Species = ifelse(Species == "Ferdauia ferdau", "Carangoides ferdau", Species),
+         Species = ifelse(Species == "Ferdauia orthogrammus", "Carangoides orthogrammus", Species)) %>% 
+  filter(!(Species %in% c("Carcharhinus melanopterus", "Triaenodon obesus"))) %>% 
+  mutate(Species = gsub(" ", "_", Species)) %>% 
+  rename(species = Species) %>% 
+  distinct(species, Diet, Family) %>% 
+  left_join(dietcnp_fam_estimates, by = c("Family", "Diet")) %>% 
+  filter(!(is.na(Dc_m)))
+
+dietcnp_all <- read.csv("data/CHA23_UVC_data.csv") %>% # use family + trophic group estimates if available, if not just trophic group
+  mutate(Species = ifelse(Species == "Plectroglyphidodon gascoynei", "Stegastes gascoynei", Species),
+         Species = ifelse(Species == "Plectroglyphidodon fasciolatus", "Stegastes fasciolatus", Species),
+         Species = ifelse(Species == "Ferdauia ferdau", "Carangoides ferdau", Species),
+         Species = ifelse(Species == "Ferdauia orthogrammus", "Carangoides orthogrammus", Species)) %>% 
+  filter(!(Species %in% c("Carcharhinus melanopterus", "Triaenodon obesus"))) %>% 
+  mutate(Species = gsub(" ", "_", Species)) %>% 
+  rename(species = Species) %>% 
+  distinct(species, Diet, Family) %>% 
+  left_join(dietcnp_fam_estimates, by = c("Family", "Diet")) %>% 
+  filter((is.na(Dc_m))) %>% 
+  select(species, Family, Diet) %>% 
+  left_join(dietcnp_diet_estimates, by = "Diet") %>% 
+  bind_rows(dietcnp_fam) 
+
+cnp_all <- dietcnp_all %>% 
+  left_join(bodycnp_all) %>% 
+  mutate(species = gsub("_", " ", species)) %>% 
+  rename(Species = species) %>% 
+  mutate(Species = ifelse(Species == "Stegastes gascoynei", "Plectroglyphidodon gascoynei", Species), #backtransform
+         Species = ifelse(Species == "Stegastes fasciolatus", "Plectroglyphidodon fasciolatus", Species),
+         Species = ifelse(Species == "Carangoides ferdau", "Ferdauia ferdau", Species),
+         Species = ifelse(Species == "Carangoides orthogrammus", "Ferdauia orthogrammus", Species))
+
+```
+
+```{r metpar}
+
+og_metpar <- read.csv("data/UVC_metpar.csv")
+
+fam_list <- read.csv("data/CHA23_UVC_data.csv") %>%
+  distinct(Family) %>% 
+  left_join(og_metpar)
+
+# used the average across all families + no need to adjust f0/B0 as Tref = 28
+
+og_metpar_avg <- og_metpar %>% 
+  summarise(alpha_m = mean(alpha, na.rm = T),
+         alpha_sd = sqrt(var(alpha, na.rm = TRUE) + mean(alpha_sd^2, na.rm = TRUE)),
+         B0_m = mean(B0, na.rm = T),
+         B0_sd = sqrt(var(B0, na.rm = TRUE) + mean(B0_sd^2, na.rm = TRUE)),
+         theta = mean(theta, na.rm = T))
+
+uvc_metpar_all <- read.csv("data/CHA23_UVC_data.csv") %>%
+  distinct(Family) %>% 
+  left_join(og_metpar, by = "Family") %>% 
+  mutate(alpha_m = ifelse(is.na(alpha), og_metpar_avg$alpha_m, alpha),
+         alpha_sd = ifelse(is.na(alpha_sd), og_metpar_avg$alpha_sd, alpha_sd),
+         f0_m = ifelse(is.na(B0), og_metpar_avg$B0_m, B0),
+         f0_sd = ifelse(is.na(B0_sd), og_metpar_avg$B0_sd, B0_sd),
+         theta_m = ifelse(is.na(theta), og_metpar_avg$theta, theta)) %>% 
+  select(-alpha, -B0, -B0_sd, -theta, -X)
+
+
+```
+
+```{r growth}
+
+# same trait and Kmax dataset as for prod calculations
+
+# Kmax
+
+traits <- read.csv('data/CHA23_UVC_traits.csv')
+kmax_list <- read.csv('data/DS2.csv') %>% 
+  filter(sstmean == 28)##Supplemental file from from Morais and Bellwood 2019 with Kmax data in it
+
+sp_uvc_kmax <- merge(traits, kmax_list, by = c("MaxSizeTL","Diet", "Position"), all.x=TRUE)
+sp_uvc_kmax_2 <- unique(sp_uvc_kmax)
+
+growth_dat <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  distinct(Species, Family)
+
+growth_dat_k <- growth_dat %>% 
+  left_join(sp_uvc_kmax_2, by = c("Species", "Family")) %>% 
+  mutate(k_sd = (Kmax_upqt - Kmax_lowqt)/1.349) %>% 
+  rename(k_m = Kmax) %>% 
+  select(-Diet, -Kmax_upqt, -Kmax_lowqt)
+
+# Here Linf = MaxSize_TL, Kmax, and t0 = 0
+
+```
+
+```{r fishbase-params}
+
+# just like the paper: fishbase
+
+# just use a and b from UVC data
+
+# h and r: trophic level and aspect ratio of caudal fin
+
+fishbase_params_dat <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  distinct(Species) %>% 
+  filter(!(Species %in% c("Dascyllus sp")))
+
+sp0 <- unique(trimws(fishbase_params_dat$Species))
+
+sp_valid <- validate_names(sp0)
+
+name_map <- tibble(input = sp0, valid = sp_valid) %>% 
+  mutate(dif = ifelse(sp0 == sp_valid, "OK", "NOT OK")) #no changing now bc I would need to change it in UVC data, UVC traits etc.
+
+# Keep only names FishBase recognizes
+ok <- name_map %>% filter(!is.na(valid))
+
+#h <- map_dfr(ok$valid, trophic_level, .id = "id") %>%
+#  left_join(ok %>% mutate(id = as.character(row_number())), by = "id") %>%
+#  select(input, valid, everything())
+
+#save(h, file = "data/trophic_level_uvc.Rdata")
+
+load("data/trophic_level_uvc.Rdata")
+
+#r <- map_dfr(ok$valid, aspect_ratio, .id = "id") %>%
+#  left_join(ok %>% mutate(id = as.character(row_number())), by = "id") %>%
+#  select(input, valid, everything())
+
+#save(r, file = "data/aspect_ratio_uvc.Rdata")
+
+load("data/aspect_ratio_uvc.Rdata")
+
+# imputation : average across genus
+# needed for Cephalopholis nigripinnis h and r, Cepalopholis spiloparaea h, Dascyllus sp h and r, 
+# r: Ctenochaetus truncatus, Pomacentrus indicus, Chlorurus capistratoides, Zebrasoma desjardinii, Scarus caudofasciatus, Plectrorhinchus vittatus, Acanthurus tristis, Plectroglyphidodon gascoynei, Acanthurus leuchocheilus, Stegastes lividus
+
+# except for Plectorhinchus vittatus where the old estimate from Fishbase is used
+
+genus_hr <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  distinct(Species) %>% 
+  mutate(Genus = word(Species, 1)) %>% 
+  left_join(h, by = c("Species" = "input")) %>% 
+  left_join(r, by = c("Species" = "input")) %>% 
+  group_by(Genus) %>% 
+  summarize(genus_h = mean(trophic_level, na.rm = T),
+            genus_r = mean(aspect_ratio, na.rm = T)) %>% 
+  mutate(genus_h = ifelse(Genus == "Plectorhinchus", 3.9, genus_h)) #from Fishbase webpage
+
+fishbase_params_all <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  distinct(Species) %>% 
+  left_join(h, by = c("Species" = "input")) %>% 
+  left_join(r, by = c("Species" = "input")) %>% 
+  select(Species, trophic_level, aspect_ratio) %>% 
+  mutate(Genus = word(Species, 1)) %>% 
+  left_join(genus_hr, by = c("Genus")) %>% 
+  mutate(h_m = ifelse(is.na(trophic_level), genus_h, trophic_level),
+         r_m = ifelse(is.na(aspect_ratio), genus_r, aspect_ratio)) %>% 
+  select(Species, h_m, r_m) 
+  
+  
+```
+
+```{r all-params}
+
+# Make database of params per species for direct input in fishflux
+
+data(param_zebsco)
+
+params_all <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  distinct(Species, Family, a, b) %>% 
+  left_join(cnp_all) %>% 
+  left_join(uvc_metpar_all) %>% 
+  left_join(growth_dat_k) %>% 
+  left_join(fishbase_params_all) %>% 
+  rename(linf_m = MaxSizeTL_Prod, lwa_m = a, lwb_m = b, v_m = sstmean) %>% 
+  mutate(F0nz_m = 0.0037, F0nz_sd = 0.0046, F0pz_m = 0.00037, F0pz_sd = 0.00051, t0_m = 0,
+         ac_m = 0.8, an_m = 0.8, ap_m = 0.7) %>% 
+  select(-MaxSizeTL, -Position, -Diet) #only thing missing is individual Length
+
+ 
+  
+```
+
+```{r run-fishflux}
+
+# Make database of params per species for direct input in fishflux
+
+params_df <- read.csv("data/CHA23_UVC_data.csv") %>% 
+  select(Species, Family, Year, Atoll, Island, Diet, Transect, Area, Length) %>% 
+  left_join(params_all, by = c("Species", "Family")) %>% 
+  filter(if_all(everything(), ~ !is.na(.)))
+
+#rows_with_na <- params_df %>% #before removing sharks - only 6 NAs
+#  filter(if_any(everything(), is.na))
+
+cnpflux <- parallel::mclapply(1:nrow(params_df), function(x){
+    print(x)
+    
+    dt <- params_df[x,] 
+    par <- dt %>% select(-Species, -Family, -Year, -Atoll, -Island, -Diet, -Transect, -Area, -Length) %>% as.list()
+    mod <- fishflux::cnp_model_mcmc(TL = dt$Length,
+                                    param = par, iter = 2000) #seed = x
+    
+
+    extr <- fishflux::extract(mod, par = c("F0c", "F0n", "F0p", "Gc", "Gn", "Gp", "Sc", "Sn", "Sp", 
+                                           "Ic", "In", "Ip", "Wc", "Wn", "Wp", "Fc", "Fn", "Fp"))
+    extr <- cbind(dt[,1:9], extr) 
+    lim <- fishflux::limitation(mod, plot = FALSE)
+    extr$limitation <-first(lim[lim$prop_lim == max(lim$prop_lim), "nutrient"])
+    
+     return(extr)
+  }) %>% plyr::ldply()  
+
+save(cnpflux, file = "data/cnpflux_output.Rdata")
+
+```

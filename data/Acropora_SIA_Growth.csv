@@ -1,0 +1,15 @@
+Year,Atoll,Island,Treatment,ID,Original.ID,Updated.ID,Date,Top_surface_area_raw,Symbiont_N15,Host_N15,number_days_between,diff_SA,diff_SA_year,Previous_surface_area,Type,Origin_Site,Origin_treatment,Origin_colony_unique_ID,Symbiont_N15_cs,Previous_surface_area_cs
+2021,Salomon,Ile Anglaise,ratty,Sal_Anglaise_93,93,NA,20/04/2021,147.342,5.28,3.99,396,41.254,38.0245202,106.088,Natural,NA,NA,NA,-1.365737803,-0.221150025
+2021,Salomon,Ile Anglaise,ratty,Sal_Anglaise_11,11,NA,20/04/2021,82.651,5.35,2.94,396,25.68,23.66969697,56.971,Natural,NA,NA,NA,-1.314121891,-0.633886753
+2021,Peros Banhos,Longue,birdy,Longue_22,22,NA,26/04/2021,106.326,5.59,5.22,783,80.487,37.51948276,25.839,Natural,NA,NA,NA,-1.137153049,-0.895493118
+2021,Salomon,Ile Anglaise,ratty,Sal_Anglaise_92,92,NA,20/04/2021,229.614,5.74,3.86,396,89.597,82.58309343,140.017,Natural,NA,NA,NA,-1.026547522,0.063959906
+2021,Peros Banhos,Ile Anglaise,ratty,PB_Anglaise_51,51,NA,30/04/2021,177.601,6.07,4.45,788,158.289,73.3191434,19.312,Natural,NA,NA,NA,-0.783215364,-0.950340373
+2021,Peros Banhos,Longue,birdy,Longue_17,17,NA,26/04/2021,842.126,6.86,6.45,783,776.456,361.9494764,65.67,Natural,NA,NA,NA,-0.200692926,-0.560787891
+2021,Peros Banhos,Grande Ile Coquillage,birdy,Grand Coquillage_50,50,NA,23/04/2021,192.177,6.94,5.4,776,160.529,75.50655284,31.648,Natural,NA,NA,NA,-0.141703312,-0.846679313
+2021,Salomon,Fouquet,ratty,Fouquet_68,68,NA,22/04/2021,545.941,6.96,5.41,397,260.718,239.7029471,285.223,Natural,NA,NA,NA,-0.126955908,1.284145368
+2021,Great Chagos Bank,Middle Brother,birdy,Middle Brother_6,6,NA,06/05/2021,249.878,7.27,5.56,416,64.48,56.575,185.398,Natural,NA,NA,NA,0.101628846,0.445302526
+2021,Great Chagos Bank,Middle Brother,birdy,Middle Brother_2,2,NA,06/05/2021,343.733,7.4,6.18,416,157.21,137.9366587,186.523,Natural,NA,NA,NA,0.197486969,0.454756051
+2021,Peros Banhos,Grande Ile Coquillage,birdy,Grand Coquillage_65,65,NA,23/04/2021,608.311,7.45,6.64,776,47.306,22.25088918,561.005,Natural,NA,NA,NA,0.234355477,3.601578443
+2021,Peros Banhos,Grande Ile Coquillage,birdy,Grand Coquillage_16,16,NA,23/04/2021,223.334,7.49,,776,162.867,76.60625644,60.467,Natural,NA,NA,NA,0.263850284,-0.604509397
+2021,Salomon,Passe,birdy,Sal_Passe_48,48,NA,18/04/2021,810.845,8.88,7.75,394,633.169,586.5651904,177.676,Natural,NA,NA,NA,1.288794828,0.380413526
+2021,Salomon,Passe,birdy,Sal_Passe_9,9,NA,21/04/2021,300.587,9.37,7.43,397,92.081,84.6588539,208.506,Natural,NA,NA,NA,1.650106214,0.639482144

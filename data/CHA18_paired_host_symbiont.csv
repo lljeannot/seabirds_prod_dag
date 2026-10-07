@@ -1,0 +1,82 @@
+﻿Host_sample_ID,Symbiont_sample_ID,Host_N15,Symbiont_N15,Atoll,Island,Year
+065 HO,65,6.64,7.45,Peros Banhos,Grande Ile Coquillage,2021
+016 HO,16,7.07,7.49,Peros Banhos,Grande Ile Coquillage,2021
+050 HO,50,5.4,6.94,Peros Banhos,Grande Ile Coquillage,2021
+051 HO,51,4.45,6.07,Peros Banhos,Ile Anglaise,2021
+011-ANA HO,ANA 011,2.94,5.35,Salomon,Ile Anglaise,2021
+093 ANG HO,093 ANG,3.99,5.28,Salomon,Ile Anglaise,2021
+ANG 022 HO,ANG 022,5.25,4.69,Salomon,Ile Anglaise,2021
+092 HO,92,3.86,5.74,Salomon,Ile Anglaise,2021
+ANA 022 HO,ANA 022,4.52,5.31,Salomon,Ile Anglaise,2021
+Passe 048 HO,Passe 048,7.75,8.88,Salomon,Passe,2021
+Passe 09G HO,Passe 09G,8,9.06,Salomon,Passe,2021
+Passe 09I,Passe 09I,7.43,9.37,Salomon,Passe,2021
+Passe 09H HO,Passe 09H   ,8.23,9.18,Salomon,Passe,2021
+Fouquet 068 HO,Fouquet 068,5.41,6.96,Salomon,Fouquet,2021
+Fouquet 053 HO,Fouquet 053,5.61,6.7,Salomon,Fouquet,2021
+022 HO,22,5.22,5.59,Peros Banhos,Longue,2021
+017-HO,17,6.45,6.86,Peros Banhos,Longue,2021
+006 HO,6,5.56,7.27,Great Chagos Bank,Middle Brother,2021
+002 HO,2,6.18,7.4,Great Chagos Bank,Middle Brother,2021
+,Symbiont_1,,6.19,Peros Banhos,Ile Anglaise,2018
+,Symbiont_2,,6.31,Peros Banhos,Ile Anglaise,2018
+,Symbiont_3,,6.05,Peros Banhos,Ile Anglaise,2018
+,Symbiont_4,,6.27,Peros Banhos,Ile Anglaise,2018
+,Symbiont_5,,6.48,Peros Banhos,Ile Anglaise,2018
+,Symbiont_6,,6.99,Peros Banhos,Grande Ile Coquillage,2018
+,Symbiont_7,,7.68,Peros Banhos,Grande Ile Coquillage,2018
+,Symbiont_8,,7.49,Peros Banhos,Grande Ile Coquillage,2018
+,Symbiont_9,,6.66,Peros Banhos,Grande Ile Coquillage,2018
+,Symbiont_10,,6.37,Peros Banhos,Poule,2018
+,Symbiont_11,,6.24,Peros Banhos,Poule,2018
+,Symbiont_12,,6.47,Peros Banhos,Poule,2018
+,Symbiont_13,,6.12,Peros Banhos,Poule,2018
+,Symbiont_14,,6.22,Peros Banhos,Poule,2018
+,Symbiont_15,,7.71,Great Chagos Bank,South Brother,2018
+,Symbiont_16,,8.05,Great Chagos Bank,South Brother,2018
+,Symbiont_17,,7.97,Great Chagos Bank,South Brother,2018
+,Symbiont_18,,7.8,Great Chagos Bank,South Brother,2018
+,Symbiont_19,,8.14,Great Chagos Bank,South Brother,2018
+Host_FC1,Symbionts_FC1,5.28,6.89,Salomon,Fouquet,2019
+Host_FC2,Symbionts_FC-2,6.88,6.51,Salomon,Fouquet,2019
+Host_FC3,Symbionts_FC3,6.41,6.61,Salomon,Fouquet,2019
+Host_FC4,Symbionts_FC4,7.31,6.45,Salomon,Fouquet,2019
+Host_FC5,Symbionts_FC5,7.1,7.03,Salomon,Fouquet,2019
+Host_NB,Symbionts_NB,7.16,6.93,Great Chagos Bank,Nelson Island,2019
+Host_NB-1,Symbionts_NB-1,6.59,6.77,Great Chagos Bank,Nelson Island,2019
+Host_NB-2,Symbionts_NB-2,6.8,6.38,Great Chagos Bank,Nelson Island,2019
+Host_NB-3,Symbionts_NB-3,6.52,6.92,Great Chagos Bank,Nelson Island,2019
+Host_NB4,Symbionts_NB-4,7.16,6.36,Great Chagos Bank,Nelson Island,2019
+,Symbiont_RTE01,,6.86,Great Chagos Bank,Eagle Island,2018
+,Symbiont_RTE02,,7.01,Great Chagos Bank,Eagle Island,2018
+,Symbiont_RTE03,,6.77,Great Chagos Bank,Eagle Island,2018
+,Symbiont_RTE04,,6.79,Great Chagos Bank,Eagle Island,2018
+,Symbiont_RTE05,,6.64,Great Chagos Bank,Eagle Island,2018
+Acropora 06,Symbiont_RTE06,5.15,5.42,Salomon,Ile Anglaise,2018
+Acropora 07,Symbiont_RTE07,5.19,5.2,Salomon,Ile Anglaise,2018
+Acropora 08,Symbiont_RTE08,5.11,5.49,Salomon,Ile Anglaise,2018
+Acropora 09,Symbiont_RTE09,5.49,5.4,Salomon,Ile Anglaise,2018
+Acropora 10,Symbiont_RTE10,5.39,5.87,Salomon,Ile Anglaise,2018
+Acropora 01,Symbiont_RTE11,8.27,8,Salomon,Passe,2018
+Acropora 02,Symbiont_RTE12,7.41,7.68,Salomon,Passe,2018
+Acropora 03,Symbiont_RTE13,7.38,7.18,Salomon,Passe,2018
+Acropora 04,Symbiont_RTE14,7.4,7.78,Salomon,Passe,2018
+Acropora 05,Symbiont_RTE15,7.44,7.64,Salomon,Passe,2018
+,Symbiont_RTE16,,6.24,Peros Banhos,Longue,2018
+,Symbiont_RTE17,,6.85,Peros Banhos,Longue,2018
+,Symbiont_RTE18,,6.81,Peros Banhos,Longue,2018
+,Symbiont_RTE19,,7.11,Peros Banhos,Longue,2018
+,Symbiont_RTE20,,6.85,Peros Banhos,Longue,2018
+,Symbiont_RTE21,,7.12,Peros Banhos,Longue,2018
+,Symbiont_RTE22,,7.29,Peros Banhos,Longue,2018
+,Symbiont_RTE23,,6.5,Peros Banhos,Grande Mapou,2018
+,Symbiont_RTE24,,6.35,Peros Banhos,Grande Mapou,2018
+,Symbiont_RTE25,,6.19,Peros Banhos,Grande Mapou,2018
+,Symbiont_RTE26,,6.25,Peros Banhos,Grande Mapou,2018
+,Symbiont_RTE27,,6.45,Peros Banhos,Grande Mapou,2018
+,Symbiont_RTE28,,7.6,Great Chagos Bank,Middle Brother,2018
+,Symbiont_RTE29,,6.24,Great Chagos Bank,Middle Brother,2018
+,Symbiont_RTE30,,7.01,Great Chagos Bank,Middle Brother,2018
+,Symbiont_RTE31,,6.48,Great Chagos Bank,Middle Brother,2018
+,Symbiont_RTE32,,7.32,Great Chagos Bank,Middle Brother,2018
+,Symbiont_RTE33,,7.66,Great Chagos Bank,Middle Brother,2018

@@ -1,0 +1,24 @@
+﻿ID,Date,Atoll,Island,Location,CSL,Depth,Depth_Kate,Condition,Lat,Lon,Diver_2,Diver_3,Team,Ruth
+A,17-Oct,Salomon,Passe,lagoon,250,6,6.5,aenesthetic,5.30566,72.25172,Casey,Javier,1,0
+B,18-Oct,Salomon,Ile Anglaise,lagoon,250,2,1.5,ok,5.32822,72.22462,Ruth,Tom,2,1
+C,18-Oct,Salomon,Ile Anglaise,lagoon,210,5,5.5,ok,5.32822,72.22462,Ruth,Tom,2,1
+D,19-Oct,Salomon,Ile Anglaise,lagoon,180,3,3.5,ok,5.32822,72.22462,Ruth,Kate,3,1
+E,19-Oct,Salomon,Passe,lagoon,240,5,5,ok,5.30566,72.25172,Ruth,Kate,3,1
+F,20-Oct,Salomon,Passe,lagoon,230,7,6.5,ok,5.30566,72.25172,Ruth,Tom,2,1
+G,20-Oct,Salomon,Passe,lagoon,250,5,5,ok,5.30566,72.25172,Ruth,Tom,2,1
+H,22-Oct,Peros Banhos,Grande Ile Coquillage,lagoon,220,4,4,aenesthetic,5.37241,71.96729,Kate,Yuneeda,4,0
+I,22-Oct,Peros Banhos,Grande Ile Coquillage,lagoon,180,4,4.5,ok,5.37241,71.96729,Kate,Yuneeda,4,0
+J,23-Oct,Peros Banhos,Grande Ile Coquillage,lagoon,220,4.5,4.5,ok,5.37241,71.96729,Ruth,Kate,3,1
+K,23-Oct,Peros Banhos,Grande Ile Coquillage,lagoon,210,5,5,ok,5.37241,71.96729,Ruth,Kate,3,1
+L,24-Oct,Peros Banhos,Ile Anglaise,lagoon,210,7.5,7.5,ok,5.43892,71.75688,Ruth,Kate,3,1
+M,25-Oct,Peros Banhos,Ile Anglaise,lagoon,250,5,5,swell,5.43892,71.75688,Ruth,Yuneeda,5,1
+N,27-Oct,Peros Banhos,Ile Yeye,lagoon,250,9,9,ok,5S14.9260,71E57.6054,Ruth,Yuneeda,5,1
+O,27-Oct,Peros Banhos,Ile Yeye,lagoon,220,4,4.5,ok,5S15.2587,71E57.9489,Ruth,Yuneeda,5,1
+P,28-Oct,Great Chagos Bank,Middle Brother,lagoon,150,8.5,9,ok,6.157,71.51846,Ruth,Kate,3,1
+Q,28-Oct,Great Chagos Bank,Middle Brother,lagoon,150,8,8,ok,6.157,71.51846,Ruth,Kate,3,1
+R,29-Oct,Great Chagos Bank,Middle Brother,lagoon,180,8,8,ok,6S9.3912,71E31.1368,Tom,Yuneeda,6,0
+S,29-Oct,Great Chagos Bank,Middle Brother,lagoon,210,8,9,ok,6S9.3859,71E31.1409,Kate,Yuneeda,7,0
+T,30-Oct,Great Chagos Bank,Eagle Island,outer reef,200,7.5,7,ok,6.17489,71.33212,Ruth,Yuneeda,5,1
+U,30-Oct,Great Chagos Bank,Eagle Island,outer reef,240,6.5,NA,ok,6S10.6233,71E19.8267,Casey,Javier,1,0
+V,31-Oct,Great Chagos Bank,Eagle Island,outer reef,220,6.5,6.5,ok,6.17818,71.32942,Ruth,Yuneeda,5,1
+W,31-Oct,Great Chagos Bank,Eagle Island,outer reef,260,7.5,7.6,ok,6.17818,71.32942,Ruth,Yuneeda,5,1
