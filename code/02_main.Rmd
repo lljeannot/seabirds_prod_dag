@@ -5,7 +5,9 @@ date: "2026-10-07"
 ---
 
 ```{r setup, include=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = normalizePath(".."))
 ```
 
 ## Import data and packages
@@ -43,6 +45,8 @@ library(lme4)
 # 2. Data
 
 # Site data
+
+site_data <- read.csv("data/CHA23_Site_info.csv")
 sb_data <- read.csv("data/Seabird_island_data.csv")
 island_data <- read.csv("data/CHA23_Source_sites.csv")
 
@@ -1215,7 +1219,6 @@ uvc <- outcomes_uvc %>%
   left_join(mediators_productivity_island_wide) %>% 
   left_join(sb_data, by = c("Island", "Atoll")) 
 
-
 ```
 
 # Calculate total effect of seabirds on fish productivity
@@ -1235,11 +1238,10 @@ hypothesis(m_total_pisc, "logSeabird_Biomass_density_prop > 0") #0.98
 
 m_total_inv <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
                              control = list(adapt_delta = 0.99, max_treedepth = 15), 
-                   iter = 4000, warmup = 2000,
   family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Invertivore"))
 
 summary(m_total_inv)
-hypothesis(m_total_inv, "logSeabird_Biomass_density_prop > 0") #0.54
+hypothesis(m_total_inv, "logSeabird_Biomass_density_prop > 0") #0.39
 
 #plank total effect
 
@@ -1271,8 +1273,7 @@ hypothesis(m_total_cor, "logSeabird_Biomass_density_prop > 0") #0.81
 #omni total effect
 
 m_total_omni <- brm(Prod ~ log(Seabird_Biomass_density_prop) + (1|Atoll/Island) + (1|Year),
-                              control = list(adapt_delta = 0.9, max_treedepth = 12),
-                   iter = 4000, warmup = 2000, 
+                              control = list(adapt_delta = 0.99, max_treedepth = 15),
   family = Gamma(link = "log"), data = uvc %>% filter(Diet == "Omnivore"))
 
 summary(m_total_omni)
@@ -1659,9 +1660,9 @@ plot_fig2b <- ggarrange(plot.herb_b + rremove("xlab") + rremove("x.text") + rrem
 
 plot_fig4 <- ggarrange(legend_fig2, plot_fig2a, plot_fig2b, legend = "none", ncol = 3, align = "hv", labels = c("", "a", "b"), widths = c(0.6, 0.9, 1.4))
 
-#plot_fig4
+plot_fig4
 
-#ggsave("figures/main/Fig4.png", plot_fig4, width = 6, height = 8, units = "in", dpi = 600)
+ggsave("figures/main/Fig4.png", plot_fig4, width = 6, height = 8, units = "in", dpi = 600)
   
 ```
 
@@ -2875,8 +2876,7 @@ cor(log(uvc_det_prod_direct$Seabird_Biomass_density_prop),
 cor(mediators_nutrients_wide[,c("N15_POM","N15_Turf","N15_Symbiont")],
     use="complete.obs") # all 1 so explains weak indiv coefficients
 
-
-m_det_prod_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Wc) + N15_Detritus + (1|Atoll/Island) + (1|Year), data = uvc_det_prod_direct, iter = 4000, warmup = 2000, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 12))
+m_det_prod_direct <- brm(Prod ~ log(Seabird_Biomass_density_prop) + log(Wc) + N15_Detritus + (1|Atoll/Island) + (1|Year), data = uvc_det_prod_direct, family = Gamma(link = "log"), control = list(adapt_delta = 0.99, max_treedepth = 15))
 
 summary(m_det_prod_direct)
 hypothesis(m_det_prod_direct, "logWc > 0") #0.98
