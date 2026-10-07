@@ -24,13 +24,13 @@ This project is organized in 3 folders:
 
 ### 2.2 Code description
 
-The _01_cnpflux.Rmd_ code if formatted in Rmarkdown and contains analyses to produce the `cnpflux_output.Rdata` dataframe. This dataframe is already included in the file_folder:	`data` folder given calculation time.
+The _01_cnpflux.Rmd_ code if formatted in Rmarkdown and contains analyses to produce the `cnpflux_output.Rdata` dataframe. This dataframe is already included in the :file_folder:	`data` folder given calculation time.
 
 The _02_main.Rmd_ code is formatted in Rmarkdown and contains all R-based analyses and code to reproduce data and figures from the paper, including supplementary material. 
 Following productivity calculations and the DAG, models and outputs are divided into the eight feeding groups described in the paper. The inset plots from Fig 2, S4 and S5 are also included.
 
 ## 3. Reproducibility parameters
-
+ ```R
 R version 4.6.0 (2026-04-24 ucrt)
 Platform: x86_64-w64-mingw32/x64
 Running under: Windows 10 x64 (build 19045)
@@ -77,6 +77,4 @@ loaded via a namespace (and not attached):
 [103] systemfonts_1.3.2    Rdpack_2.6.6         processx_3.9.0       globals_0.19.1       coda_0.19-4.1        svUnit_1.0.8        
 [109] parallel_4.6.0       rstantools_2.7.0     assertthat_0.2.1     bayesplot_1.15.0     Brobdingnag_1.2-9    listenv_1.0.0       
 [115] mvtnorm_1.3-7        e1071_1.7-17         insight_1.5.2        rlang_1.2.0          multcomp_1.4-31     
-
-
-## 3. Reproducibility parameters
+```
