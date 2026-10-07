@@ -43,8 +43,6 @@ library(lme4)
 # 2. Data
 
 # Site data
-
-site_data <- read.csv("data/CHA23_Site_info.csv")
 sb_data <- read.csv("data/Seabird_island_data.csv")
 island_data <- read.csv("data/CHA23_Source_sites.csv")
 
@@ -1659,11 +1657,11 @@ plot_fig2b <- ggarrange(plot.herb_b + rremove("xlab") + rremove("x.text") + rrem
                         legend = "none", heights = c(rep(1,7), 1.5),
                         ncol = 1)  
 
-plot_fig2 <- ggarrange(legend_fig2, plot_fig2a, plot_fig2b, legend = "none", ncol = 3, align = "hv", labels = c("", "a", "b"), widths = c(0.6, 0.9, 1.4))
+plot_fig4 <- ggarrange(legend_fig2, plot_fig2a, plot_fig2b, legend = "none", ncol = 3, align = "hv", labels = c("", "a", "b"), widths = c(0.6, 0.9, 1.4))
 
-#plot_fig2
+#plot_fig4
 
-ggsave("figures/main/Fig2b.png", plot_fig2, width = 6, height = 8, units = "in", dpi = 600)
+#ggsave("figures/main/Fig4.png", plot_fig4, width = 6, height = 8, units = "in", dpi = 600)
   
 ```
 
